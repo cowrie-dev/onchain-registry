@@ -1,77 +1,72 @@
-# Sample Hardhat 3 Beta Project (`node:test` and `viem`)
+# Address Registry Contract
 
-This project showcases a Hardhat 3 Beta project using the native Node.js test runner (`node:test`) and the `viem` library for Ethereum interactions.
+This contract serves as the basis for an on-chain registry that maps Ethereum addresses to uint8 values (0-100 inclusive). This extends Ownable for boilerplate ownership methods and AccessControlEnumerable for role-based access control. Built with Hardhat 3, TypeScript, and Viem.
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+## Setup
 
-## Project Overview
+This project uses [1Password CLI](https://developer.1password.com/docs/cli) for secure credential management. The `.env.ref` file contains references to 1Password secrets.
 
-This example project includes:
+Required environment variables:
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+- `RPC_URL`: RPC endpoint URL
+- `PRIVATE_KEY`: Deployer/admin private key
 
-## Usage
+Use `op run --env-file=.env.ref --` to inject referenced credentials at runtime. The package scripts are set up to do this for you.
 
-### Running Tests
+## Deployment
 
-To run all the tests in the project, execute the following command:
+Deploy the AddressRegistry contract:
 
 ```shell
-npx hardhat test
+npm run deploy
 ```
 
-You can also selectively run the Solidity or `node:test` tests:
+The deployment script writes contract addresses to `deployments.json`, keyed by chain ID.
 
-```shell
-npx hardhat test solidity
-npx hardhat test nodejs
-```
+## Registry Management
 
-### Deploying AddressRegistry
-
-Use the provided TypeScript deployment script to deploy the registry contract. The script expects Hardhat network credentials to be configured (see `.env.ref` for examples).
-
-Deploy to the default Hardhat network:
-
-```shell
-npx hardhat run scripts/deploy.ts
-```
-
-Or target a configured network:
-
-```shell
-npx hardhat run --network <networkName> scripts/deploy.ts
-```
-
-Each deployment updates `deployments.json`, keyed by chain ID, which front ends and scripts can import to discover the latest contract addresses.
-
-### Managing the registry on a network
-
-Helper scripts under `scripts/actions/` wrap common admin flows. Invoke them via npm while providing parameters as environment variables (Hardhat 3 doesn't forward custom CLI flags to scripts).
-
-For example, to add updater accounts:
+Management scripts accept configuration via environment variables.
 
 ```shell
 HARDHAT_NETWORK=shape \
-REGISTRY_ADDRESS=0xc776CD2071F558Abb2B328DF8251a6AA080264E2 \
-REGISTRY_ACCOUNTS=0xF4884cE82eE55ECe5DB07044c374ecC86e7562D7 \
+REGISTRY_ADDRESS=0x... \
+REGISTRY_ACCOUNTS=0xAddr1,0xAddr2 \
 npm run registry:add-updaters
 ```
 
-Available environment variables:
+### Available Commands
 
-| Script | Required variables | Optional |
-| --- | --- | --- |
-| `registry:add-updaters` | `REGISTRY_ADDRESS`, `REGISTRY_ACCOUNTS` (comma-separated) | `REGISTRY_FROM` |
-| `registry:remove-updaters` | `REGISTRY_ADDRESS`, `REGISTRY_ACCOUNTS` | `REGISTRY_FROM` |
-| `registry:set-values` | `REGISTRY_ADDRESS`, `REGISTRY_ACCOUNTS`, `REGISTRY_VALUES` | `REGISTRY_FROM` |
-| `registry:clear-values` | `REGISTRY_ADDRESS`, `REGISTRY_ACCOUNTS` | `REGISTRY_FROM` |
-| `registry:update` | `REGISTRY_ADDRESS` | `REGISTRY_SET_ACCOUNTS`, `REGISTRY_SET_VALUES`, `REGISTRY_CLEAR_ACCOUNTS`, `REGISTRY_FROM` |
-| `registry:transfer-owner` | `REGISTRY_ADDRESS`, `REGISTRY_NEW_OWNER` | `REGISTRY_FROM` |
-| `registry:list-updaters` | `REGISTRY_ADDRESS` | `REGISTRY_FROM` |
-| `registry:get-values` | `REGISTRY_ADDRESS`, `REGISTRY_ACCOUNTS` | `REGISTRY_FROM` |
+**Access Control:**
 
-`REGISTRY_FROM` lets you select a specific configured account; otherwise the first wallet client is used.
+- `registry:add-updaters` - Grant updater role to addresses
+- `registry:remove-updaters` - Revoke updater role from addresses
+- `registry:list-updaters` - List all updater addresses
+- `registry:transfer-owner` - Transfer contract ownership
+
+**Registry Operations:**
+
+- `registry:set-values` - Set values for addresses (requires `REGISTRY_VALUES` as comma-separated uint8)
+- `registry:clear-values` - Clear values for addresses
+- `registry:update` - Set and clear values in a single transaction
+- `registry:get-values` - Query values for addresses
+
+### Environment Variables
+
+| Variable                  | Description                                | Required               |
+| ------------------------- | ------------------------------------------ | ---------------------- |
+| `REGISTRY_ADDRESS`        | Contract address                           | All commands           |
+| `REGISTRY_ACCOUNTS`       | Comma-separated addresses                  | Most commands          |
+| `REGISTRY_VALUES`         | Comma-separated uint8 values (0-100)       | `set-values`, `update` |
+| `REGISTRY_FROM`           | Signer address (defaults to first account) | Optional               |
+| `REGISTRY_NEW_OWNER`      | New owner address                          | `transfer-owner`       |
+| `REGISTRY_SET_ACCOUNTS`   | Addresses to set                           | `update`               |
+| `REGISTRY_SET_VALUES`     | Values to set                              | `update`               |
+| `REGISTRY_CLEAR_ACCOUNTS` | Addresses to clear                         | `update`               |
+
+## Testing
+
+Run the test suite:
+
+```shell
+npm test
+```
