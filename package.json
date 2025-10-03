@@ -1,0 +1,34 @@
+{
+  "name": "registry",
+  "version": "1.0.0",
+  "description": "Onchain registry contract",
+  "homepage": "https://github.com/cowrie-dev/onchain-registry#readme",
+  "bugs": {
+    "url": "https://github.com/cowrie-dev/onchain-registry/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cowrie-dev/onchain-registry.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "deploy": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy.ts --network shape"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ignition": "^3.0.3",
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",
+    "@nomicfoundation/hardhat-verify": "^3.0.2",
+    "@types/node": "^22.18.8",
+    "forge-std": "github:foundry-rs/forge-std#v1.9.4",
+    "hardhat": "^3.0.6",
+    "typescript": "~5.8.0",
+    "viem": "^2.37.12"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0"
+  }
+}
