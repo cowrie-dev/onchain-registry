@@ -45,3 +45,33 @@ Or target a configured network:
 ```shell
 npx hardhat run --network <networkName> scripts/deploy.ts
 ```
+
+Each deployment updates `deployments.json`, keyed by chain ID, which front ends and scripts can import to discover the latest contract addresses.
+
+### Managing the registry on a network
+
+Helper scripts under `scripts/actions/` wrap common admin flows. Invoke them via npm while providing parameters as environment variables (Hardhat 3 doesn't forward custom CLI flags to scripts).
+
+For example, to add updater accounts:
+
+```shell
+HARDHAT_NETWORK=shape \
+REGISTRY_ADDRESS=0xc776CD2071F558Abb2B328DF8251a6AA080264E2 \
+REGISTRY_ACCOUNTS=0xF4884cE82eE55ECe5DB07044c374ecC86e7562D7 \
+npm run registry:add-updaters
+```
+
+Available environment variables:
+
+| Script | Required variables | Optional |
+| --- | --- | --- |
+| `registry:add-updaters` | `REGISTRY_ADDRESS`, `REGISTRY_ACCOUNTS` (comma-separated) | `REGISTRY_FROM` |
+| `registry:remove-updaters` | `REGISTRY_ADDRESS`, `REGISTRY_ACCOUNTS` | `REGISTRY_FROM` |
+| `registry:set-values` | `REGISTRY_ADDRESS`, `REGISTRY_ACCOUNTS`, `REGISTRY_VALUES` | `REGISTRY_FROM` |
+| `registry:clear-values` | `REGISTRY_ADDRESS`, `REGISTRY_ACCOUNTS` | `REGISTRY_FROM` |
+| `registry:update` | `REGISTRY_ADDRESS` | `REGISTRY_SET_ACCOUNTS`, `REGISTRY_SET_VALUES`, `REGISTRY_CLEAR_ACCOUNTS`, `REGISTRY_FROM` |
+| `registry:transfer-owner` | `REGISTRY_ADDRESS`, `REGISTRY_NEW_OWNER` | `REGISTRY_FROM` |
+| `registry:list-updaters` | `REGISTRY_ADDRESS` | `REGISTRY_FROM` |
+| `registry:get-values` | `REGISTRY_ADDRESS`, `REGISTRY_ACCOUNTS` | `REGISTRY_FROM` |
+
+`REGISTRY_FROM` lets you select a specific configured account; otherwise the first wallet client is used.

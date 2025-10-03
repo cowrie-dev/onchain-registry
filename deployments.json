@@ -1,0 +1,22 @@
+{
+  "0": {
+    "AddressRegistry": {
+      "chainName": "default",
+      "address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+      "deployer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "owner": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "updater": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "deployedAt": "2025-10-03T21:34:36.966Z"
+    }
+  },
+  "360": {
+    "AddressRegistry": {
+      "chainName": "Shape",
+      "address": "0xc776CD2071F558Abb2B328DF8251a6AA080264E2",
+      "deployer": "0xcC5DcD1aBDf65366DdEd3B9a59513CaB822F1c3E",
+      "owner": "0xcC5DcD1aBDf65366DdEd3B9a59513CaB822F1c3E",
+      "updater": "0xcC5DcD1aBDf65366DdEd3B9a59513CaB822F1c3E",
+      "deployedAt": "2025-10-03T20:25:37Z"
+    }
+  }
+}

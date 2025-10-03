@@ -16,7 +16,15 @@
   "main": "index.js",
   "scripts": {
     "test": "npx hardhat test",
-    "deploy": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy.ts --network shape"
+    "deploy": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy.ts --network shape",
+    "registry:add-updaters": "op run --env-file=.env.ref -- hardhat run scripts/actions/add-updaters.ts",
+    "registry:remove-updaters": "op run --env-file=.env.ref -- hardhat run scripts/actions/remove-updaters.ts",
+    "registry:set-values": "op run --env-file=.env.ref -- hardhat run scripts/actions/set-registry-values.ts",
+    "registry:clear-values": "op run --env-file=.env.ref -- hardhat run scripts/actions/clear-registry-values.ts",
+    "registry:update": "op run --env-file=.env.ref -- hardhat run scripts/actions/update-registry.ts",
+    "registry:transfer-owner": "op run --env-file=.env.ref -- hardhat run scripts/actions/transfer-ownership.ts",
+    "registry:list-updaters": "op run --env-file=.env.ref -- hardhat run scripts/actions/list-updaters.ts",
+    "registry:get-values": "op run --env-file=.env.ref -- hardhat run scripts/actions/get-values.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.3",
