@@ -187,3 +187,43 @@ describe("SanctionsResolver: onAttest", () => {
     expectAddressEqual(events[0].args.attester!, attester.account.address);
   });
 });
+
+describe("SanctionsResolver: onRevoke", () => {
+  it("revoking the active UID clears the designation and emits Unsanctioned", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const attesterEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: attester },
+    });
+
+    const uid = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: {
+        source: "S",
+        sourceUID: "U",
+        category: "C",
+        evidenceURI: "",
+        designatedAt: 0n,
+      },
+    });
+
+    const publicClient = await viem.getPublicClient();
+    const startBlock = await publicClient.getBlockNumber();
+
+    await revoke(attesterEAS, schemaUID, uid);
+
+    const designation = await resolver.read.getDesignation([recipient.account.address]);
+    assert.equal(
+      designation.attestationUID.toLowerCase(),
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+    );
+    assert.equal(designation.attester.toLowerCase(), ZERO_ADDRESS);
+    assert.equal(designation.attestedAt, 0n);
+
+    const events = await resolver.getEvents.Unsanctioned({}, { fromBlock: startBlock });
+    assert.equal(events.length, 1);
+    expectAddressEqual(events[0].args.account!, recipient.account.address);
+    assert.equal(events[0].args.uid!.toLowerCase(), uid.toLowerCase());
+  });
+});

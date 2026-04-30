@@ -64,7 +64,13 @@ contract SanctionsResolver is SchemaResolver, Ownable {
         return true;
     }
 
-    function onRevoke(Attestation calldata, uint256) internal pure override returns (bool) {
+    function onRevoke(Attestation calldata att, uint256 /*value*/) internal override returns (bool) {
+        // Only clear state if this UID is the currently active one for the recipient.
+        // Stale revocations of superseded attestations are silent no-ops (last-write semantics).
+        if (_designations[att.recipient].attestationUID == att.uid) {
+            delete _designations[att.recipient];
+            emit Unsanctioned(att.recipient, att.uid);
+        }
         return true;
     }
 }
