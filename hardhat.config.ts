@@ -35,6 +35,12 @@ const config: HardhatUserConfig = {
       url: configVariable("RPC_URL"),
       accounts: [configVariable("PRIVATE_KEY")],
     },
+    mainnet: {
+      type: "http",
+      chainType: "l1",
+      url: configVariable("RPC_URL"),
+      accounts: [configVariable("PRIVATE_KEY")],
+    },
   },
   chainDescriptors: {
     // Example chain
