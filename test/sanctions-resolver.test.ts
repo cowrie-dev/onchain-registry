@@ -71,3 +71,41 @@ describe("SanctionsResolver: constructor", () => {
     assert.equal(await resolver.read.trustedAttesters([ZERO_ADDRESS]), false);
   });
 });
+
+describe("SanctionsResolver: trustedAttesters", () => {
+  it("owner can grant and revoke trust", async () => {
+    const { resolver } = await deployResolver(attester.account.address);
+
+    await resolver.write.setAttesterTrust([secondAttester.account.address, true]);
+    assert.equal(await resolver.read.trustedAttesters([secondAttester.account.address]), true);
+
+    await resolver.write.setAttesterTrust([secondAttester.account.address, false]);
+    assert.equal(await resolver.read.trustedAttesters([secondAttester.account.address]), false);
+  });
+
+  it("non-owner cannot setAttesterTrust", async () => {
+    const { resolver } = await deployResolver(attester.account.address);
+    const strangerResolver = await viem.getContractAt(
+      "SanctionsResolver",
+      resolver.address,
+      { client: { wallet: stranger } },
+    );
+    await expectRevert(
+      strangerResolver.write.setAttesterTrust([secondAttester.account.address, true]),
+      "OwnableUnauthorizedAccount",
+    );
+  });
+
+  it("emits AttesterTrusted on every change", async () => {
+    const { resolver } = await deployResolver(ZERO_ADDRESS);
+    const tx = await resolver.write.setAttesterTrust([attester.account.address, true]);
+    const publicClient = await viem.getPublicClient();
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: tx });
+    const events = await resolver.getEvents.AttesterTrusted({}, {
+      blockHash: receipt.blockHash,
+    });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].args.trusted, true);
+    expectAddressEqual(events[0].args.attester!, attester.account.address);
+  });
+});

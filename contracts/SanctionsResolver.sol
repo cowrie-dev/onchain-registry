@@ -31,6 +31,14 @@ contract SanctionsResolver is SchemaResolver, Ownable {
         }
     }
 
+    /// @notice Add or remove an attester from the allowlist.
+    /// @param attester Address whose trust is being toggled.
+    /// @param trusted  True to grant, false to revoke.
+    function setAttesterTrust(address attester, bool trusted) external onlyOwner {
+        trustedAttesters[attester] = trusted;
+        emit AttesterTrusted(attester, trusted);
+    }
+
     /// @notice Returns the EAS contract address this resolver is bound to.
     function getEAS() external view returns (address) {
         return address(_eas);
