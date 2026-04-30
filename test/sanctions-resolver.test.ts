@@ -306,3 +306,51 @@ describe("SanctionsResolver: re-attestation", () => {
     expectAddressEqual(designation.attester, secondAttester.account.address);
   });
 });
+
+describe("SanctionsResolver: isSanctioned", () => {
+  it("returns false for unknown addresses", async () => {
+    const { resolver } = await deployResolver(attester.account.address);
+    assert.equal(await resolver.read.isSanctioned([recipient.account.address]), false);
+  });
+
+  it("returns true after a trusted attestation lands", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+    await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "S", sourceUID: "U", category: "C", evidenceURI: "", designatedAt: 0n },
+    });
+    assert.equal(await resolver.read.isSanctioned([recipient.account.address]), true);
+  });
+
+  it("batch overload returns one bool per input in order", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+    await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "S", sourceUID: "U", category: "C", evidenceURI: "", designatedAt: 0n },
+    });
+
+    const out = await resolver.read.isSanctionedBatch([
+      [recipient.account.address, secondRecipient.account.address, recipient.account.address],
+    ]);
+    assert.deepEqual(out, [true, false, true]);
+  });
+
+  it("returns false again after revocation", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+    const uid = await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "S", sourceUID: "U", category: "C", evidenceURI: "", designatedAt: 0n },
+    });
+    await revoke(easA, schemaUID, uid);
+    assert.equal(await resolver.read.isSanctioned([recipient.account.address]), false);
+  });
+});

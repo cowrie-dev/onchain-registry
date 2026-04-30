@@ -50,6 +50,23 @@ contract SanctionsResolver is SchemaResolver, Ownable {
         return _designations[account];
     }
 
+    /// @notice Chainalysis-compatible single-address sanctioned check.
+    /// @param account Address to check.
+    /// @return True iff there is a non-revoked attestation from a trusted attester for this address.
+    function isSanctioned(address account) external view returns (bool) {
+        return _designations[account].attestationUID != bytes32(0);
+    }
+
+    /// @notice Batch sanctioned check.
+    /// @param accounts Addresses to check.
+    /// @return out One bool per input, same order.
+    function isSanctionedBatch(address[] calldata accounts) external view returns (bool[] memory out) {
+        out = new bool[](accounts.length);
+        for (uint256 i = 0; i < accounts.length; i++) {
+            out[i] = _designations[accounts[i]].attestationUID != bytes32(0);
+        }
+    }
+
     function onAttest(Attestation calldata att, uint256 /*value*/) internal override returns (bool) {
         if (!trustedAttesters[att.attester]) {
             return false;
