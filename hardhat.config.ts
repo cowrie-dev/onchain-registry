@@ -5,11 +5,8 @@ import { HardhatUserConfig, configVariable } from "hardhat/config";
 const config: HardhatUserConfig = {
   plugins: [hardhatToolboxViemPlugin, hardhatVerify],
   solidity: {
-    profiles: {
-      default: {
-        version: "0.8.28",
-      },
-      production: {
+    compilers: [
+      {
         version: "0.8.28",
         settings: {
           optimizer: {
@@ -18,7 +15,10 @@ const config: HardhatUserConfig = {
           },
         },
       },
-    },
+      {
+        version: "0.8.27",
+      },
+    ],
   },
   networks: {
     hardhatMainnet: {
