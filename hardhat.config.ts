@@ -5,20 +5,26 @@ import { HardhatUserConfig, configVariable } from "hardhat/config";
 const config: HardhatUserConfig = {
   plugins: [hardhatToolboxViemPlugin, hardhatVerify],
   solidity: {
-    compilers: [
-      {
-        version: "0.8.28",
-        settings: {
-          optimizer: {
-            enabled: true,
-            runs: 200,
+    profiles: {
+      default: {
+        compilers: [
+          { version: "0.8.28" },
+          { version: "0.8.27" },
+        ],
+      },
+      production: {
+        compilers: [
+          {
+            version: "0.8.28",
+            settings: { optimizer: { enabled: true, runs: 200 } },
           },
-        },
+          {
+            version: "0.8.27",
+            settings: { optimizer: { enabled: true, runs: 200 } },
+          },
+        ],
       },
-      {
-        version: "0.8.27",
-      },
-    ],
+    },
   },
   networks: {
     hardhatMainnet: {
