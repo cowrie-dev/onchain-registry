@@ -27,13 +27,21 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
+    // The built-in "default" edr-simulated network used by `npm test`.
+    // EAS exceeds the Spurious Dragon 24 KB contract size limit; allow it for tests.
+    default: {
+      type: "edr-simulated",
+      allowUnlimitedContractSize: true,
+    },
     hardhatMainnet: {
       type: "edr-simulated",
       chainType: "l1",
+      allowUnlimitedContractSize: true,
     },
     hardhatOp: {
       type: "edr-simulated",
       chainType: "op",
+      allowUnlimitedContractSize: true,
     },
     shape: {
       type: "http",
