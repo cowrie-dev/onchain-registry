@@ -44,8 +44,24 @@ contract SanctionsResolver is SchemaResolver, Ownable {
         return address(_eas);
     }
 
-    function onAttest(Attestation calldata, uint256) internal pure override returns (bool) {
-        return false;
+    /// @notice Returns the active designation recorded for an account.
+    /// @param account The address to look up.
+    function getDesignation(address account) external view returns (Designation memory) {
+        return _designations[account];
+    }
+
+    function onAttest(Attestation calldata att, uint256 /*value*/) internal override returns (bool) {
+        if (!trustedAttesters[att.attester]) {
+            return false;
+        }
+
+        _designations[att.recipient] = Designation({
+            attestationUID: att.uid,
+            attester: att.attester,
+            attestedAt: uint64(block.timestamp)
+        });
+        emit Sanctioned(att.recipient, att.attester, att.uid);
+        return true;
     }
 
     function onRevoke(Attestation calldata, uint256) internal pure override returns (bool) {

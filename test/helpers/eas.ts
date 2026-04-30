@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { encodeAbiParameters, encodePacked, keccak256, type Hex } from "viem";
-import type { ContractReturnType, WalletClient } from "@nomicfoundation/hardhat-viem/types";
+import { encodeAbiParameters, encodePacked, keccak256, type Hex, parseAbiItem } from "viem";
+import type { ContractReturnType, PublicClient, WalletClient } from "@nomicfoundation/hardhat-viem/types";
 import type { network } from "hardhat";
 
 type ViemHelpers = Awaited<ReturnType<typeof network.connect>>["viem"];
@@ -72,37 +72,64 @@ type AttestArgs = {
   recipient: `0x${string}`;
   data: DesignationFields;
   revocable?: boolean;
+  publicClient?: PublicClient;
 };
 
-export async function attest({ eas, schemaUID, recipient, data, revocable = true }: AttestArgs): Promise<Hex> {
-  // simulate to read the returned UID, then send for real
-  const { result: uid } = await eas.simulate.attest([
-    {
-      schema: schemaUID,
-      data: {
-        recipient,
-        expirationTime: 0n,
-        revocable,
-        refUID: "0x0000000000000000000000000000000000000000000000000000000000000000",
-        data: encodeDesignation(data),
-        value: 0n,
-      },
+// The EAS Attested event ABI item, used to parse the UID from the receipt.
+// The schema field is named "schemaUID" in the EAS v1.8.0 ABI.
+const ATTESTED_EVENT = parseAbiItem(
+  "event Attested(address indexed recipient, address indexed attester, bytes32 uid, bytes32 indexed schemaUID)",
+);
+
+export async function attest({
+  eas,
+  schemaUID,
+  recipient,
+  data,
+  revocable = true,
+  publicClient,
+}: AttestArgs): Promise<Hex> {
+  const requestData = {
+    schema: schemaUID,
+    data: {
+      recipient,
+      expirationTime: 0n,
+      revocable,
+      refUID: "0x0000000000000000000000000000000000000000000000000000000000000000" as Hex,
+      data: encodeDesignation(data),
+      value: 0n,
     },
-  ]);
-  await eas.write.attest([
-    {
-      schema: schemaUID,
-      data: {
-        recipient,
-        expirationTime: 0n,
-        revocable,
-        refUID: "0x0000000000000000000000000000000000000000000000000000000000000000",
-        data: encodeDesignation(data),
-        value: 0n,
-      },
-    },
-  ]);
-  return uid as Hex;
+  };
+
+  const hash = await eas.write.attest([requestData]);
+
+  // Retrieve the UID from the Attested event emitted in the transaction.
+  // Avoid using eas.simulate.attest because simulate runs through publicClient
+  // without an account, making EAS see att.attester = address(0), which is
+  // not in any allowlist and triggers InvalidAttestation before state is written.
+  if (publicClient) {
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    const logs = await publicClient.getLogs({
+      address: eas.address,
+      event: ATTESTED_EVENT,
+      blockHash: receipt.blockHash,
+    });
+    assert.equal(logs.length >= 1, true, "Expected at least one Attested event");
+    return logs[logs.length - 1].args.uid as Hex;
+  }
+
+  // Without a publicClient, use the contract's getEvents helper and match by tx hash.
+  // fromBlock: 0n ensures we search the full chain history on the local test node.
+  // The schema filter field is named "schemaUID" in the EAS v1.8.0 ABI.
+  const events = await eas.getEvents.Attested(
+    { recipient, schemaUID },
+    { fromBlock: 0n },
+  );
+  const match = events.find((e) => e.transactionHash === hash);
+  if (match?.args?.uid) {
+    return match.args.uid as Hex;
+  }
+  assert.fail(`Could not find Attested event for tx ${hash}`);
 }
 
 export async function revoke(

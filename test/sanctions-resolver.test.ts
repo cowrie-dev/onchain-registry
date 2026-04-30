@@ -109,3 +109,81 @@ describe("SanctionsResolver: trustedAttesters", () => {
     expectAddressEqual(events[0].args.attester!, attester.account.address);
   });
 });
+
+describe("SanctionsResolver: onAttest", () => {
+  it("trusted attester populates the designation", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+
+    const attesterEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: attester },
+    });
+    const uid = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: {
+        source: "OFAC_SDN",
+        sourceUID: "1234",
+        category: "INDIVIDUAL",
+        evidenceURI: "ipfs://evidence",
+        designatedAt: 1700000000n,
+      },
+    });
+
+    const designation = await resolver.read.getDesignation([recipient.account.address]);
+    assert.equal(designation.attestationUID.toLowerCase(), uid.toLowerCase());
+    expectAddressEqual(designation.attester, attester.account.address);
+    assert.ok(designation.attestedAt > 0n);
+  });
+
+  it("untrusted attester is rejected (EAS reverts)", async () => {
+    const { eas, schemaUID } = await deployResolver(attester.account.address);
+    // secondAttester is NOT in the allowlist.
+    const strangerEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: secondAttester },
+    });
+    await expectRevert(
+      attest({
+        eas: strangerEAS,
+        schemaUID,
+        recipient: recipient.account.address,
+        data: {
+          source: "X",
+          sourceUID: "Y",
+          category: "Z",
+          evidenceURI: "",
+          designatedAt: 0n,
+        },
+      }),
+      "InvalidAttestation",
+    );
+  });
+
+  it("emits Sanctioned for trusted attestations", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const attesterEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: attester },
+    });
+
+    const publicClient = await viem.getPublicClient();
+    const startBlock = await publicClient.getBlockNumber();
+
+    await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: {
+        source: "OFAC_SDN",
+        sourceUID: "9",
+        category: "INDIVIDUAL",
+        evidenceURI: "",
+        designatedAt: 1n,
+      },
+    });
+
+    const events = await resolver.getEvents.Sanctioned({}, { fromBlock: startBlock });
+    assert.equal(events.length, 1);
+    expectAddressEqual(events[0].args.account!, recipient.account.address);
+    expectAddressEqual(events[0].args.attester!, attester.account.address);
+  });
+});
