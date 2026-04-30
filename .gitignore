@@ -21,3 +21,6 @@
 
 # MacOS filesystem
 .DS_store
+
+# Git worktrees for isolated agent development
+/.worktrees
