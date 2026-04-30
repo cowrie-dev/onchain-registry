@@ -227,3 +227,82 @@ describe("SanctionsResolver: onRevoke", () => {
     assert.equal(events[0].args.uid!.toLowerCase(), uid.toLowerCase());
   });
 });
+
+describe("SanctionsResolver: re-attestation", () => {
+  it("a second attestation supersedes the first; old UID becomes stale", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const attesterEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: attester },
+    });
+
+    const uidA = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+    });
+    const uidB = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+    });
+
+    assert.notEqual(uidA.toLowerCase(), uidB.toLowerCase());
+    const designation = await resolver.read.getDesignation([recipient.account.address]);
+    assert.equal(designation.attestationUID.toLowerCase(), uidB.toLowerCase());
+  });
+
+  it("revoking the stale (superseded) UID is a no-op on resolver state", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const attesterEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: attester },
+    });
+
+    const uidA = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+    });
+    const uidB = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+    });
+
+    // revoke the stale one
+    await revoke(attesterEAS, schemaUID, uidA);
+
+    const designation = await resolver.read.getDesignation([recipient.account.address]);
+    assert.equal(designation.attestationUID.toLowerCase(), uidB.toLowerCase());
+  });
+
+  it("multi-trusted-attester: latest write from any trusted attester wins", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    await resolver.write.setAttesterTrust([secondAttester.account.address, true]);
+
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+    const easB = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: secondAttester },
+    });
+
+    await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+    });
+    const uidB = await attest({
+      eas: easB,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+    });
+
+    const designation = await resolver.read.getDesignation([recipient.account.address]);
+    assert.equal(designation.attestationUID.toLowerCase(), uidB.toLowerCase());
+    expectAddressEqual(designation.attester, secondAttester.account.address);
+  });
+});
