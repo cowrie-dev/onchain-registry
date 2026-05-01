@@ -354,3 +354,36 @@ describe("SanctionsResolver: isSanctioned", () => {
     assert.equal(await resolver.read.isSanctioned([recipient.account.address]), false);
   });
 });
+
+describe("SanctionsResolver: ownership", () => {
+  it("transferOwnership moves allowlist control", async () => {
+    const { resolver } = await deployResolver(attester.account.address);
+
+    await resolver.write.transferOwnership([newOwner.account.address]);
+    expectAddressEqual(await resolver.read.owner(), newOwner.account.address);
+
+    const oldOwnerResolver = await viem.getContractAt(
+      "SanctionsResolver",
+      resolver.address,
+      { client: { wallet: owner } },
+    );
+    await expectRevert(
+      oldOwnerResolver.write.setAttesterTrust([secondAttester.account.address, true]),
+      "OwnableUnauthorizedAccount",
+    );
+
+    const newOwnerResolver = await viem.getContractAt(
+      "SanctionsResolver",
+      resolver.address,
+      { client: { wallet: newOwner } },
+    );
+    await newOwnerResolver.write.setAttesterTrust([secondAttester.account.address, true]);
+    assert.equal(await resolver.read.trustedAttesters([secondAttester.account.address]), true);
+  });
+
+  it("existing trusted attesters are preserved across ownership transfer", async () => {
+    const { resolver } = await deployResolver(attester.account.address);
+    await resolver.write.transferOwnership([newOwner.account.address]);
+    assert.equal(await resolver.read.trustedAttesters([attester.account.address]), true);
+  });
+});
