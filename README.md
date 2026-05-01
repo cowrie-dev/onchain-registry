@@ -103,12 +103,21 @@ The resolver exposes:
 | `isSanctioned(address) returns (bool)`      | Chainalysis-compatible single check  |
 | `isSanctionedBatch(address[]) returns (bool[])` | Batch check (one bool per input) |
 | `getDesignation(address) returns (Designation)` | Active UID, attester, timestamp |
+| `sanctionedCount() returns (uint256)`       | Total count of currently-sanctioned addresses |
+| `sanctionedAddresses() returns (address[])` | Full set of currently-sanctioned addresses (for off-chain reconciliation) |
+| `sanctionedRange(uint256, uint256) returns (address[])` | Paginated walk of the sanctioned set (offset, limit) |
 | `trustedAttesters(address) returns (bool)`  | Allowlist membership                 |
 | `owner() returns (address)`                 | OZ Ownable                           |
 
 `isSanctionedBatch` is exposed under a distinct Solidity name (rather than as an
 overload of `isSanctioned(address[])`) so client tooling that maps overload sets
 to a single function name (e.g. viem) can invoke each variant unambiguously.
+
+`sanctionedAddresses` returns the entire set in one call.  Cheap enough for OFAC-scale
+lists (hundreds); paginate via `sanctionedRange` if the set ever exceeds your eth_call
+gas cap.  Note that `EnumerableSet` uses swap-and-pop on remove, so insertion order is
+not preserved and indices may shift between pages across mutations.  For reconciliation
+walkers, prefer pulling the whole set in one call.
 
 ## Testing
 
