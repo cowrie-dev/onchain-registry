@@ -7,10 +7,7 @@ const config: HardhatUserConfig = {
   solidity: {
     profiles: {
       default: {
-        compilers: [
-          { version: "0.8.28" },
-          { version: "0.8.27" },
-        ],
+        compilers: [{ version: "0.8.28" }, { version: "0.8.27" }],
       },
       production: {
         compilers: [
@@ -46,13 +43,19 @@ const config: HardhatUserConfig = {
     shape: {
       type: "http",
       chainType: "op",
-      url: configVariable("RPC_URL"),
+      url: "https://shape-mainnet.g.alchemy.com/v2/" + configVariable("ALCHEMY_API_KEY"),
       accounts: [configVariable("PRIVATE_KEY")],
     },
     mainnet: {
       type: "http",
       chainType: "l1",
-      url: configVariable("RPC_URL"),
+      url: "https://eth-mainnet.g.alchemy.com/v2/" + configVariable("ALCHEMY_API_KEY"),
+      accounts: [configVariable("PRIVATE_KEY")],
+    },
+    sepolia: {
+      type: "http",
+      chainType: "l1",
+      url: "https://eth-sepolia.g.alchemy.com/v2/" + configVariable("ALCHEMY_API_KEY"),
       accounts: [configVariable("PRIVATE_KEY")],
     },
   },

@@ -1,18 +1,32 @@
-import { encodeAbiParameters, encodePacked, keccak256, type Address, type Hex } from "viem";
+import {
+  encodeAbiParameters,
+  encodePacked,
+  keccak256,
+  type Address,
+  type Hex,
+} from "viem";
 
 export const SCHEMA_STRING =
   "string source,string sourceUID,string category,string evidenceURI,uint64 designatedAt";
 
 /// EAS canonical contract addresses per chain.  Mainnet only at launch; extend when
 /// new deployments are added.
-const EAS_ADDRESSES: Record<number, { eas: Address; schemaRegistry: Address }> = {
-  1: {
-    eas: "0xA1207F3BBa224E2c9c3c6D5aF63D0eb1582Ce587",
-    schemaRegistry: "0xA7b39296258348C78294F95B872b282326A97BDF",
-  },
-};
+const EAS_ADDRESSES: Record<number, { eas: Address; schemaRegistry: Address }> =
+  {
+    1: {
+      eas: "0xA1207F3BBa224E2c9c3c6D5aF63D0eb1582Ce587",
+      schemaRegistry: "0xA7b39296258348C78294F95B872b282326A97BDF",
+    },
+    11155111: {
+      eas: "0xC2679fBD37d54388Ce493F1DB75320D236e1815e",
+      schemaRegistry: "0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0",
+    },
+  };
 
-export function getEASAddresses(chainId: number): { eas: Address; schemaRegistry: Address } {
+export function getEASAddresses(chainId: number): {
+  eas: Address;
+  schemaRegistry: Address;
+} {
   const entry = EAS_ADDRESSES[chainId];
   if (!entry) {
     throw new Error(
@@ -24,7 +38,10 @@ export function getEASAddresses(chainId: number): { eas: Address; schemaRegistry
 
 export function predictSchemaUID(resolver: Address, revocable: boolean): Hex {
   return keccak256(
-    encodePacked(["string", "address", "bool"], [SCHEMA_STRING, resolver, revocable]),
+    encodePacked(
+      ["string", "address", "bool"],
+      [SCHEMA_STRING, resolver, revocable],
+    ),
   );
 }
 
@@ -45,7 +62,13 @@ export function encodeDesignation(fields: DesignationFields): Hex {
       { name: "evidenceURI", type: "string" },
       { name: "designatedAt", type: "uint64" },
     ],
-    [fields.source, fields.sourceUID, fields.category, fields.evidenceURI, fields.designatedAt],
+    [
+      fields.source,
+      fields.sourceUID,
+      fields.category,
+      fields.evidenceURI,
+      fields.designatedAt,
+    ],
   );
 }
 
