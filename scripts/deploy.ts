@@ -8,7 +8,11 @@ import { requireOption, resolveOption } from "./utils/resolver.js";
 
 async function main() {
   const connection = await network.connect();
-  const { viem, id: chainId, networkName } = connection;
+  const { viem, networkName } = connection;
+  const chainId = connection.networkConfig.chainId;
+  if (chainId === undefined) {
+    throw new Error(`Network ${networkName} does not define chainId in hardhat.config.ts.`);
+  }
 
   const initialAttesterArg = requireOption("--initial-attester", [
     "INITIAL_ATTESTER",

@@ -20,7 +20,6 @@ secrets.
 
 Required environment variables:
 
-- `RPC_URL`: Ethereum mainnet RPC endpoint
 - `PRIVATE_KEY`: Deployer / owner / attester key
 
 Use `op run --env-file=.env.ref --` to inject referenced credentials at runtime.

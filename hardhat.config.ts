@@ -43,19 +43,20 @@ const config: HardhatUserConfig = {
     shape: {
       type: "http",
       chainType: "op",
-      url: "https://shape-mainnet.g.alchemy.com/v2/" + configVariable("ALCHEMY_API_KEY"),
+      url: `https://shape-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY ?? ""}`,
       accounts: [configVariable("PRIVATE_KEY")],
     },
     mainnet: {
       type: "http",
       chainType: "l1",
-      url: "https://eth-mainnet.g.alchemy.com/v2/" + configVariable("ALCHEMY_API_KEY"),
+      url: `https://blockchain.googleapis.com/v1/projects/evm-queries/locations/us-central1/endpoints/ethereum-mainnet/rpc?key=${process.env.GCP_API_KEY ?? ""}`,
       accounts: [configVariable("PRIVATE_KEY")],
     },
     sepolia: {
       type: "http",
       chainType: "l1",
-      url: "https://eth-sepolia.g.alchemy.com/v2/" + configVariable("ALCHEMY_API_KEY"),
+      url: `https://blockchain.googleapis.com/v1/projects/evm-queries/locations/us-central1/endpoints/ethereum-sepolia/rpc?key=${process.env.GCP_API_KEY ?? ""}`,
+      chainId: 11155111,
       accounts: [configVariable("PRIVATE_KEY")],
     },
   },

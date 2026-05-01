@@ -18,5 +18,16 @@
       "updater": "0xcC5DcD1aBDf65366DdEd3B9a59513CaB822F1c3E",
       "deployedAt": "2025-10-03T20:25:37Z"
     }
+  },
+  "11155111": {
+    "SanctionsResolver": {
+      "chainName": "sepolia",
+      "address": "0xa16655a63e07fd921cbd0d02a48e71942b2af799",
+      "deployer": "0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e",
+      "owner": "0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e",
+      "initialAttester": "0xcC5DcD1aBDf65366DdEd3B9a59513CaB822F1c3E",
+      "easAddress": "0xC2679fBD37d54388Ce493F1DB75320D236e1815e",
+      "deployedAt": "2026-05-01T21:16:01.761Z"
+    }
   }
 }

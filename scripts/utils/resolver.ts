@@ -29,7 +29,11 @@ export async function connectViem(): Promise<{
   networkName: string;
 }> {
   const connection = await network.connect();
-  return { viem: connection.viem, chainId: connection.id, networkName: connection.networkName };
+  const chainId = connection.networkConfig.chainId;
+  if (chainId === undefined) {
+    throw new Error(`Network ${connection.networkName} does not define chainId in hardhat.config.ts.`);
+  }
+  return { viem: connection.viem, chainId, networkName: connection.networkName };
 }
 
 export async function resolveWallet(

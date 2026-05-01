@@ -33,7 +33,17 @@ const existing = (await registry.read.getSchema([expectedUID])) as { uid: `0x${s
 if (existing.uid.toLowerCase() === expectedUID.toLowerCase()) {
   console.log(`Schema already registered.  Skipping submit, recording UID.`);
 } else {
-  await registry.write.register([SCHEMA_STRING, deployment.address as `0x${string}`, REVOCABLE]);
+  const txHash = await registry.write.register([
+    SCHEMA_STRING,
+    deployment.address as `0x${string}`,
+    REVOCABLE,
+  ]);
+  console.log(`  register tx: ${txHash}`);
+  const publicClient = await viem.getPublicClient();
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+  if (receipt.status !== "success") {
+    throw new Error(`Register tx ${txHash} reverted (status=${receipt.status}).`);
+  }
   const stored = (await registry.read.getSchema([expectedUID])) as { uid: `0x${string}` };
   if (stored.uid.toLowerCase() !== expectedUID.toLowerCase()) {
     throw new Error(`Schema UID mismatch: expected ${expectedUID}, got ${stored.uid}`);
