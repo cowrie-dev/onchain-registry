@@ -34,24 +34,73 @@ The project uses ESM with `"moduleResolution": "node16"`, so TypeScript files im
 
 ## Contract architecture
 
-Single contract: `contracts/AddressRegistry.sol`.  It composes `Ownable` (single owner) with `AccessControlEnumerable` (UPDATER_ROLE), and tracks the active address set via `EnumerableSet.AddressSet` so callers can enumerate the registry on-chain.
+Single contract: `contracts/SanctionsResolver.sol`.  It extends EAS `SchemaResolver`
+(from `@ethereum-attestation-service/eas-contracts`) and OpenZeppelin `Ownable`.
+`Ownable` governs only the `trustedAttesters` allowlist; the resolver has no direct
+setters for sanctions state.  Mutations flow exclusively through EAS:
 
-Two non-obvious invariants enforced by the contract, worth preserving on any change:
+- `onAttest` is called by EAS on every new attestation.  If the attester is in the
+  allowlist, the resolver records the latest `Designation { uid, attester, time }`
+  for the recipient and emits `Sanctioned`.  If the attester is not allowlisted,
+  `onAttest` returns `false` and EAS reverts the attestation.
+- `onRevoke` is called by EAS on revocation.  The resolver only clears its mirror
+  if the revoked UID matches the currently active one; revocations of stale
+  (superseded) attestations are silent no-ops.  This is the "last-attestation-wins
+  per recipient" invariant.
 
-- `_transferOwnership` is overridden to keep `DEFAULT_ADMIN_ROLE` and `UPDATER_ROLE` in sync with `owner()`: the previous owner loses both roles, the new owner gains both.  Any new role added to the contract should follow this same pattern or be explicitly excluded.
-- `_clearRegistryValues` reverts on addresses that were never set (`Registry: address not set`).  This is intentional (callers must know what they are clearing) and tests rely on it.
+Read interface:
 
-Values are constrained to `uint8` in `[0, 100]`; `_setRegistryValue` enforces the upper bound.  The `parseUint8List` helper in `scripts/utils/registry.ts` mirrors that range on the client side.
+- `isSanctioned(address) returns (bool)` (Chainalysis-compatible).
+- `isSanctionedBatch(address[]) returns (bool[])` (named explicitly rather than
+  overloaded so viem-style clients can call each variant unambiguously).
+- `getDesignation(address) returns (Designation)`: the active UID + attester +
+  attestedAt; consumers fetch rich metadata (source, evidenceURI, etc.) from EAS
+  using the UID.
+
+Invariants worth preserving on any change:
+
+- `onRevoke` must remain a no-op when the revoked UID is not the active one.
+  Tests in `test/sanctions-resolver.test.ts` rely on this for the
+  re-attestation-then-stale-revoke flow.
+- `onAttest` must reject untrusted attesters with `return false` (which causes
+  EAS to revert the whole attestation).  Do not silently accept and skip the
+  state update.
+- Ownership transfers do **not** need `_transferOwnership` overrides.  The
+  legacy `AddressRegistry` overrode it to keep `UPDATER_ROLE` in sync; the new
+  contract has no analogous role state, so plain OZ `Ownable` semantics apply.
+
+The schema string (registered against EAS SchemaRegistry on mainnet) is:
+`string source,string sourceUID,string category,string evidenceURI,uint64 designatedAt`,
+revocable, with the resolver as the schema's resolver.
 
 ## Networks and deployments
 
-`hardhat.config.ts` defines a live `shape` network (Shape L2, chainId 360, `chainType: "op"`) plus two simulated networks (`hardhatMainnet`, `hardhatOp`).  `npm run deploy` is hardcoded to `--network shape`; for other targets, invoke `npx hardhat run scripts/deploy.ts --network <name>` directly.
+`hardhat.config.ts` defines a live `mainnet` network (Ethereum, `chainType: "l1"`),
+the legacy `shape` network (Shape L2, chainId 360, kept so legacy AddressRegistry
+deployments remain reachable), plus simulated `hardhatMainnet` and `hardhatOp`.
+`npm run deploy` and every `registry:*` script target `mainnet` by default; pass
+`--network <other>` to `npx hardhat run` to target another configured network.
 
-Deployments are recorded to `deployments.json`, keyed by chain ID then contract name.  The deploy script preserves any existing entries and migrates legacy single-contract entries (where the chain ID mapped directly to a deployment record) into the nested shape on the next write.
+Deployments are recorded to `deployments.json`, keyed by chain ID then contract
+name.  The new resolver deployment record carries `address`, `deployer`, `owner`,
+`initialAttester`, `easAddress`, `deployedAt`, and (after running
+`scripts/register-schema.ts`) `schemaUID`.  EAS contract addresses per chain
+live in `scripts/utils/eas.ts`; add an entry to `EAS_ADDRESSES` to support a
+new chain.
 
 ## Testing
 
-Tests use the Node built-in test runner (`node:test`) with `assert/strict`, not Mocha/Chai, despite Hardhat's defaults.  Wallet clients are pulled once in a top-level `before` hook and reused across `describe` blocks.  When asserting reverts, use the `expectRevert` helper in `test/address-registry.test.ts`: viem nests revert reasons through several `cause` layers, and the helper flattens them before matching.
+Tests use the Node built-in test runner (`node:test`) with `assert/strict`.  Each
+test deploys a fresh EAS + SchemaRegistry pair (via the helpers in
+`test/helpers/eas.ts`), then deploys `SanctionsResolver` and registers the schema
+with it.  Wallet clients are pulled once in a top-level `before` hook.  When
+asserting reverts, use the `expectRevert` helper from `test/helpers/eas.ts`:
+viem nests revert reasons through several `cause` layers, and the helper
+flattens them before matching.
+
+`contracts/test-helpers/EASImports.sol` exists solely to drag the EAS and
+SchemaRegistry source into Hardhat's compilation set; it is never deployed in
+production.
 
 ## Writing style
 
