@@ -19,7 +19,7 @@ npm run registry:<action>      # see README for the full action list
 
 Hardhat 3 does NOT support `--test-name-pattern` at the top level; run the full suite with `npx hardhat test` (or `npm test`) and let the runner print every result.
 
-All `npm run` scripts that hit a live network are wrapped in `op run --env-file=.env.ref --` (1Password CLI), which injects `PRIVATE_KEY` and `RPC_URL`.  `npm test` does not need `op run`.  When invoking a script manually outside of `npm run`, prepend `op run --env-file=.env.ref --` yourself if it touches a live network.
+All `npm run` scripts that hit a live network are wrapped in `op run --env-file=.env.ref --` (1Password CLI), which injects `PRIVATE_KEY`, `ALCHEMY_API_KEY`, and `GCP_API_KEY`.  `npm test` does not need `op run`.  When invoking a script manually outside of `npm run`, prepend `op run --env-file=.env.ref --` yourself if it touches a live network.
 
 ## Module resolution gotcha
 

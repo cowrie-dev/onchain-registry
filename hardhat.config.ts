@@ -44,12 +44,14 @@ const config: HardhatUserConfig = {
       type: "http",
       chainType: "op",
       url: `https://shape-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY ?? ""}`,
+      chainId: 360,
       accounts: [configVariable("PRIVATE_KEY")],
     },
     mainnet: {
       type: "http",
       chainType: "l1",
       url: `https://blockchain.googleapis.com/v1/projects/evm-queries/locations/us-central1/endpoints/ethereum-mainnet/rpc?key=${process.env.GCP_API_KEY ?? ""}`,
+      chainId: 1,
       accounts: [configVariable("PRIVATE_KEY")],
     },
     sepolia: {
