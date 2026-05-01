@@ -7,32 +7,58 @@ const config: HardhatUserConfig = {
   solidity: {
     profiles: {
       default: {
-        version: "0.8.28",
+        compilers: [{ version: "0.8.28" }, { version: "0.8.27" }],
       },
       production: {
-        version: "0.8.28",
-        settings: {
-          optimizer: {
-            enabled: true,
-            runs: 200,
+        compilers: [
+          {
+            version: "0.8.28",
+            settings: { optimizer: { enabled: true, runs: 200 } },
           },
-        },
+          {
+            version: "0.8.27",
+            settings: { optimizer: { enabled: true, runs: 200 } },
+          },
+        ],
       },
     },
   },
   networks: {
+    // The built-in "default" edr-simulated network used by `npm test`.
+    // EAS exceeds the Spurious Dragon 24 KB contract size limit; allow it for tests.
+    default: {
+      type: "edr-simulated",
+      allowUnlimitedContractSize: true,
+    },
     hardhatMainnet: {
       type: "edr-simulated",
       chainType: "l1",
+      allowUnlimitedContractSize: true,
     },
     hardhatOp: {
       type: "edr-simulated",
       chainType: "op",
+      allowUnlimitedContractSize: true,
     },
     shape: {
       type: "http",
       chainType: "op",
-      url: configVariable("RPC_URL"),
+      url: `https://shape-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY ?? ""}`,
+      chainId: 360,
+      accounts: [configVariable("PRIVATE_KEY")],
+    },
+    mainnet: {
+      type: "http",
+      chainType: "l1",
+      url: `https://blockchain.googleapis.com/v1/projects/evm-queries/locations/us-central1/endpoints/ethereum-mainnet/rpc?key=${process.env.GCP_API_KEY ?? ""}`,
+      chainId: 1,
+      accounts: [configVariable("PRIVATE_KEY")],
+    },
+    sepolia: {
+      type: "http",
+      chainType: "l1",
+      url: `https://blockchain.googleapis.com/v1/projects/evm-queries/locations/us-central1/endpoints/ethereum-sepolia/rpc?key=${process.env.GCP_API_KEY ?? ""}`,
+      chainId: 11155111,
       accounts: [configVariable("PRIVATE_KEY")],
     },
   },

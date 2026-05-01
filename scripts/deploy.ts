@@ -2,46 +2,68 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { network } from "hardhat";
+import { type Address, getAddress } from "viem";
+import { getEASAddresses } from "./utils/eas.js";
+import { requireOption, resolveOption } from "./utils/resolver.js";
 
 async function main() {
   const connection = await network.connect();
-  const { viem } = connection;
+  const { viem, networkName } = connection;
+  const chainId = connection.networkConfig.chainId;
+  if (chainId === undefined) {
+    throw new Error(`Network ${networkName} does not define chainId in hardhat.config.ts.`);
+  }
+
+  const initialAttesterArg = requireOption("--initial-attester", [
+    "INITIAL_ATTESTER",
+    "RESOLVER_INITIAL_ATTESTER",
+  ]);
+
+  // Allow callers to override the EAS address (e.g. for testnets); otherwise look it up.
+  const easOverride = resolveOption("--eas", ["EAS", "EAS_ADDRESS"]);
+  const easAddress: Address = easOverride
+    ? getAddress(easOverride)
+    : getEASAddresses(chainId).eas;
 
   const [walletClient] = await viem.getWalletClients();
   if (!walletClient) {
-    throw new Error("No wallet client available. Configure accounts for this network.");
+    throw new Error("No wallet client available.  Configure accounts for this network.");
   }
-
   const deployer = walletClient.account.address;
-  console.log("Deploying with:", deployer);
 
-  const registry = await viem.deployContract(
-    "AddressRegistry",
-    [deployer, deployer, [], []],
+  console.log(`Deploying SanctionsResolver`);
+  console.log(`  network        : ${networkName} (chainId ${chainId})`);
+  console.log(`  deployer       : ${deployer}`);
+  console.log(`  EAS            : ${easAddress}`);
+  console.log(`  initial attester: ${initialAttesterArg}`);
+
+  const resolver = await viem.deployContract(
+    "SanctionsResolver",
+    [easAddress, getAddress(initialAttesterArg)],
     { client: { wallet: walletClient } },
   );
 
-  console.log("AddressRegistry deployed to:", registry.address);
+  console.log(`SanctionsResolver deployed to: ${resolver.address}`);
 
   await recordDeployment({
-    networkName: connection.networkName,
-    chainId: connection.id,
-    contractName: "AddressRegistry",
-    address: registry.address,
+    networkName,
+    chainId,
+    address: resolver.address,
     deployer,
     owner: deployer,
-    updater: deployer,
+    initialAttester: initialAttesterArg,
+    easAddress,
   });
 }
 
 type DeploymentMetadata = {
   networkName: string;
   chainId: number;
-  contractName: string;
   address: string;
   deployer: string;
   owner: string;
-  updater: string;
+  initialAttester: string;
+  easAddress: string;
 };
 
 type DeploymentRecord = {
@@ -49,10 +71,11 @@ type DeploymentRecord = {
   address: string;
   deployer: string;
   owner: string;
-  updater: string;
+  initialAttester: string;
+  easAddress: string;
+  schemaUID?: string;
   deployedAt: string;
 };
-
 type DeploymentManifest = Record<string, Record<string, DeploymentRecord>>;
 
 async function recordDeployment(metadata: DeploymentMetadata): Promise<void> {
@@ -63,40 +86,20 @@ async function recordDeployment(metadata: DeploymentMetadata): Promise<void> {
     const current = await readFile(filePath, "utf8");
     manifest = JSON.parse(current) as DeploymentManifest;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw error;
-    }
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 
   const chainKey = String(metadata.chainId);
-  const existingEntry = manifest[chainKey] as Record<string, unknown> | undefined;
-  let chainManifest: Record<string, DeploymentRecord> = {};
-  if (existingEntry) {
-    const values = Object.values(existingEntry);
-    const looksStructured =
-      values.length > 0 &&
-      values.every((value) =>
-        typeof value === "object" && value !== null && "address" in (value as Record<string, unknown>),
-      );
-
-    if (looksStructured) {
-      chainManifest = existingEntry as Record<string, DeploymentRecord>;
-    } else if ("address" in existingEntry) {
-      chainManifest = {
-        [metadata.contractName]: existingEntry as unknown as DeploymentRecord,
-      };
-    }
-  }
-
-  chainManifest[metadata.contractName] = {
+  const chainManifest = manifest[chainKey] ?? {};
+  chainManifest.SanctionsResolver = {
     chainName: metadata.networkName,
     address: metadata.address,
     deployer: metadata.deployer,
     owner: metadata.owner,
-    updater: metadata.updater,
+    initialAttester: metadata.initialAttester,
+    easAddress: metadata.easAddress,
     deployedAt: new Date().toISOString(),
-  } satisfies DeploymentRecord;
-
+  };
   manifest[chainKey] = chainManifest;
 
   await writeFile(filePath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");

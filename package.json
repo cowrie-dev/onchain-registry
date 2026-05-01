@@ -16,27 +16,28 @@
   "main": "index.js",
   "scripts": {
     "test": "npx hardhat test",
-    "deploy": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy.ts --network shape",
-    "registry:add-updaters": "op run --env-file=.env.ref -- hardhat run scripts/actions/add-updaters.ts",
-    "registry:remove-updaters": "op run --env-file=.env.ref -- hardhat run scripts/actions/remove-updaters.ts",
-    "registry:set-values": "op run --env-file=.env.ref -- hardhat run scripts/actions/set-registry-values.ts",
-    "registry:clear-values": "op run --env-file=.env.ref -- hardhat run scripts/actions/clear-registry-values.ts",
-    "registry:update": "op run --env-file=.env.ref -- hardhat run scripts/actions/update-registry.ts",
-    "registry:transfer-owner": "op run --env-file=.env.ref -- hardhat run scripts/actions/transfer-ownership.ts",
-    "registry:list-updaters": "op run --env-file=.env.ref -- hardhat run scripts/actions/list-updaters.ts",
-    "registry:get-values": "op run --env-file=.env.ref -- hardhat run scripts/actions/get-values.ts"
+    "deploy": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy.ts --network mainnet",
+    "register-schema": "op run --env-file=.env.ref -- hardhat run scripts/register-schema.ts --network mainnet",
+    "registry:trust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/trust-attester.ts --network mainnet",
+    "registry:untrust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/untrust-attester.ts --network mainnet",
+    "registry:list-trusted-attesters": "op run --env-file=.env.ref -- hardhat run scripts/actions/list-trusted-attesters.ts --network mainnet",
+    "registry:sanction": "op run --env-file=.env.ref -- hardhat run scripts/actions/sanction.ts --network mainnet",
+    "registry:unsanction": "op run --env-file=.env.ref -- hardhat run scripts/actions/unsanction.ts --network mainnet",
+    "registry:check": "op run --env-file=.env.ref -- hardhat run scripts/actions/check.ts --network mainnet",
+    "registry:transfer-owner": "op run --env-file=.env.ref -- hardhat run scripts/actions/transfer-ownership.ts --network mainnet"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.3",
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",
     "@nomicfoundation/hardhat-verify": "^3.0.2",
-    "@types/node": "^22.18.8",
+    "@types/node": "^22.19.17",
     "forge-std": "github:foundry-rs/forge-std#v1.9.4",
     "hardhat": "^3.0.6",
     "typescript": "~5.8.0",
     "viem": "^2.37.12"
   },
   "dependencies": {
+    "@ethereum-attestation-service/eas-contracts": "^1.8.0",
     "@openzeppelin/contracts": "^5.4.0"
   }
 }

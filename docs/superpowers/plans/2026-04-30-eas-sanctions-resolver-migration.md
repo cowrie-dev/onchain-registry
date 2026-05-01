@@ -1,0 +1,2683 @@
+# EAS Sanctions Resolver Migration Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.  Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Convert this repo from the generic `AddressRegistry` (uint8 score per address) into a `SanctionsResolver` that extends EAS `SchemaResolver`, exposes a Chainalysis-compatible `isSanctioned` interface, and routes all mutations through EAS attestations.
+
+**Architecture:** Single Solidity contract `SanctionsResolver` extends OpenZeppelin `Ownable` and EAS `SchemaResolver`.  EAS becomes the canonical data layer; the resolver mirrors a compact `Designation { uid, attester, attestedAt }` per recipient for cheap binary `isSanctioned` reads.  Owner manages a `trustedAttesters` allowlist; `onAttest` / `onRevoke` hooks ignore attestations from non-trusted attesters and clear designations only when the revoked UID is the active one (last-write semantics with stale-revocation no-op).
+
+**Tech Stack:** Hardhat 3, Solidity 0.8.28, OpenZeppelin Contracts v5, `@ethereum-attestation-service/eas-contracts` (Solidity), TypeScript ESM with `node16` resolution, Viem (no EAS SDK; viem encodes attestation data and parses receipt logs directly), Node built-in test runner.
+
+**Out of scope (per spec):** OFAC ingestion pipeline, DAO-governed attester set, multi-attester disagreement resolution, multi-chain deployment, tax-withholding resolver.
+
+---
+
+## File map
+
+**New:**
+- `contracts/SanctionsResolver.sol` (the contract)
+- `contracts/test-helpers/EASImports.sol` (forces compilation of EAS + SchemaRegistry into Hardhat artifacts so tests can deploy them)
+- `test/sanctions-resolver.test.ts` (full behavioral tests)
+- `test/helpers/eas.ts` (test helpers: deploy EAS, register schema, attest, revoke, encode data, expectRevert)
+- `scripts/utils/eas.ts` (per-chain EAS + SchemaRegistry constants, schema string, schema UID computation, attestation encoding helpers)
+- `scripts/utils/resolver.ts` (replaces `scripts/utils/registry.ts`: CLI option helpers, contract loaders, deployments.json reader)
+- `scripts/register-schema.ts` (registers schema against EAS SchemaRegistry; persists UID)
+- `scripts/actions/trust-attester.ts`
+- `scripts/actions/untrust-attester.ts`
+- `scripts/actions/list-trusted-attesters.ts`
+- `scripts/actions/sanction.ts` (submits EAS attestations via `multiAttest` from a JSON input file)
+- `scripts/actions/unsanction.ts` (looks up active UIDs via the resolver, calls EAS `multiRevoke`)
+- `scripts/actions/check.ts` (calls `isSanctioned`)
+
+**Modified:**
+- `contracts/AddressRegistry.sol` (deleted, see below)
+- `hardhat.config.ts` (adds Ethereum `mainnet` network config)
+- `package.json` (adds EAS package, replaces `registry:*` scripts, repoints `deploy` to `mainnet`)
+- `scripts/deploy.ts` (deploys `SanctionsResolver`; reads EAS address from chain-id table)
+- `scripts/actions/transfer-ownership.ts` (rewired to load `SanctionsResolver` instead of `AddressRegistry`)
+- `README.md` (rewrite for the new contract + script set)
+- `CLAUDE.md` (refresh contract architecture, invariants, testing notes)
+- `deployments.json` (gains entries for `SanctionsResolver` + recorded `schemaUID`)
+
+**Deleted (final cleanup task):**
+- `contracts/AddressRegistry.sol`
+- `test/address-registry.test.ts`
+- `scripts/utils/registry.ts`
+- `scripts/args/address-registry.js`
+- `scripts/actions/add-updaters.ts`
+- `scripts/actions/remove-updaters.ts`
+- `scripts/actions/list-updaters.ts`
+- `scripts/actions/set-registry-values.ts`
+- `scripts/actions/clear-registry-values.ts`
+- `scripts/actions/update-registry.ts`
+- `scripts/actions/get-values.ts`
+
+The old contract, tests, and scripts are kept untouched until the final cleanup task so the working tree continues to compile / lint while the new code is built alongside.
+
+---
+
+## EAS reference values
+
+These are used by the new code; defined once here so later tasks can copy them verbatim.
+
+**Schema string (no leading/trailing whitespace, comma-separated, no spaces inside):**
+
+```
+string source,string sourceUID,string category,string evidenceURI,uint64 designatedAt
+```
+
+**EAS canonical contract addresses:**
+
+| Chain | chainId | EAS | SchemaRegistry |
+|---|---|---|---|
+| Ethereum mainnet | 1 | `0xA1207F3BBa224E2c9c3c6D5aF63D0eb1582Ce587` | `0xA7b39296258348C78294F95B872b282326A97BDF` |
+
+(For local Hardhat networks the addresses are not fixed; tests deploy fresh EAS + SchemaRegistry instances.)
+
+**Schema UID derivation (used to verify `register` worked):**
+
+```
+schemaUID = keccak256(abi.encodePacked(schema, resolverAddress, revocable))
+```
+
+Where `resolverAddress` is encoded as `address` (20 bytes) and `revocable` as `bool` (1 byte).
+
+---
+
+### Task 1: Install EAS Solidity dependency
+
+**Files:**
+- Modify: `package.json` (dependency entry only; npm script changes happen later)
+- Modify: `package-lock.json` (regenerated by npm)
+
+- [ ] **Step 1: Install `@ethereum-attestation-service/eas-contracts`**
+
+Run:
+
+```bash
+npm install --save @ethereum-attestation-service/eas-contracts
+```
+
+Expected: package added to `dependencies` in `package.json`; `package-lock.json` updated.
+
+- [ ] **Step 2: Confirm the resolver base contract is reachable**
+
+Run:
+
+```bash
+test -f node_modules/@ethereum-attestation-service/eas-contracts/contracts/resolver/SchemaResolver.sol && echo OK
+test -f node_modules/@ethereum-attestation-service/eas-contracts/contracts/EAS.sol && echo OK
+test -f node_modules/@ethereum-attestation-service/eas-contracts/contracts/SchemaRegistry.sol && echo OK
+test -f node_modules/@ethereum-attestation-service/eas-contracts/contracts/IEAS.sol && echo OK
+```
+
+Expected: four `OK` lines.  If any path is missing, the EAS package version may have moved files; locate the equivalents under `node_modules/@ethereum-attestation-service/eas-contracts/contracts/` and update later imports accordingly.  Stop and ask the user if structure has changed materially.
+
+- [ ] **Step 3: Compile to verify the EAS sources compile under Solidity 0.8.28**
+
+Run:
+
+```bash
+npx hardhat compile
+```
+
+Expected: existing artifacts plus no new errors.  At this point no contracts in `contracts/` reference EAS yet, so the EAS sources are not pulled in.  This is just a baseline check.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add package.json package-lock.json
+git commit -m "feat: add @ethereum-attestation-service/eas-contracts dependency"
+```
+
+---
+
+### Task 2: Add Ethereum mainnet network config
+
+**Files:**
+- Modify: `hardhat.config.ts:32-37` (insert `mainnet` entry alongside `shape`)
+
+- [ ] **Step 1: Add the `mainnet` network to `hardhat.config.ts`**
+
+Replace the `networks` block with:
+
+```ts
+networks: {
+  hardhatMainnet: {
+    type: "edr-simulated",
+    chainType: "l1",
+  },
+  hardhatOp: {
+    type: "edr-simulated",
+    chainType: "op",
+  },
+  shape: {
+    type: "http",
+    chainType: "op",
+    url: configVariable("RPC_URL"),
+    accounts: [configVariable("PRIVATE_KEY")],
+  },
+  mainnet: {
+    type: "http",
+    chainType: "l1",
+    url: configVariable("RPC_URL"),
+    accounts: [configVariable("PRIVATE_KEY")],
+  },
+},
+```
+
+(`shape` is preserved so existing legacy deployments remain reachable for owner-only operations; the new `deploy` script will target `mainnet`.)
+
+- [ ] **Step 2: Verify hardhat config still loads**
+
+Run:
+
+```bash
+npx hardhat help
+```
+
+Expected: usage output, no config errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add hardhat.config.ts
+git commit -m "feat: add ethereum mainnet network to hardhat config"
+```
+
+---
+
+### Task 3: Create EAS test-imports file
+
+The `SchemaResolver` import in the production contract pulls in just enough EAS sources to satisfy its inheritance.  `EAS.sol` and `SchemaRegistry.sol` are not transitively imported, so Hardhat would not produce artifacts for them, and the tests cannot deploy them.  This file forces compilation.
+
+**Files:**
+- Create: `contracts/test-helpers/EASImports.sol`
+
+- [ ] **Step 1: Create the imports file**
+
+Write `contracts/test-helpers/EASImports.sol`:
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+// solhint-disable no-unused-import
+import { EAS } from "@ethereum-attestation-service/eas-contracts/contracts/EAS.sol";
+import { SchemaRegistry } from "@ethereum-attestation-service/eas-contracts/contracts/SchemaRegistry.sol";
+// solhint-enable no-unused-import
+
+/// @dev Empty contract whose sole purpose is to drag EAS + SchemaRegistry into the build for tests.
+contract EASImports {}
+```
+
+- [ ] **Step 2: Compile and confirm artifacts now exist**
+
+Run:
+
+```bash
+npx hardhat compile
+ls artifacts/@ethereum-attestation-service/eas-contracts/contracts/EAS.sol/EAS.json
+ls artifacts/@ethereum-attestation-service/eas-contracts/contracts/SchemaRegistry.sol/SchemaRegistry.json
+```
+
+Expected: compile succeeds, both artifact files exist.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add contracts/test-helpers/EASImports.sol
+git commit -m "build: force EAS + SchemaRegistry compilation for tests"
+```
+
+---
+
+### Task 4: Create EAS test helper module
+
+This module is consumed by every later test step.  Write it now so the TDD cycles in tasks 6-13 do not have to keep rewriting setup code.
+
+**Files:**
+- Create: `test/helpers/eas.ts`
+
+- [ ] **Step 1: Write the helpers**
+
+Create `test/helpers/eas.ts`:
+
+```ts
+import assert from "node:assert/strict";
+import { encodeAbiParameters, encodePacked, keccak256, type Hex } from "viem";
+import type { ContractReturnType, WalletClient } from "@nomicfoundation/hardhat-viem/types";
+import type { network } from "hardhat";
+
+type ViemHelpers = Awaited<ReturnType<typeof network.connect>>["viem"];
+
+export const SCHEMA_STRING =
+  "string source,string sourceUID,string category,string evidenceURI,uint64 designatedAt";
+
+export type DesignationFields = {
+  source: string;
+  sourceUID: string;
+  category: string;
+  evidenceURI: string;
+  designatedAt: bigint;
+};
+
+export function encodeDesignation(fields: DesignationFields): Hex {
+  return encodeAbiParameters(
+    [
+      { name: "source", type: "string" },
+      { name: "sourceUID", type: "string" },
+      { name: "category", type: "string" },
+      { name: "evidenceURI", type: "string" },
+      { name: "designatedAt", type: "uint64" },
+    ],
+    [fields.source, fields.sourceUID, fields.category, fields.evidenceURI, fields.designatedAt],
+  );
+}
+
+export function predictSchemaUID(resolver: `0x${string}`, revocable: boolean): Hex {
+  return keccak256(
+    encodePacked(["string", "address", "bool"], [SCHEMA_STRING, resolver, revocable]),
+  );
+}
+
+export type EASStack = {
+  schemaRegistry: ContractReturnType<"SchemaRegistry">;
+  eas: ContractReturnType<"EAS">;
+};
+
+export async function deployEAS(viem: ViemHelpers, deployer: WalletClient): Promise<EASStack> {
+  const schemaRegistry = await viem.deployContract("SchemaRegistry", [], {
+    client: { wallet: deployer },
+  });
+  const eas = await viem.deployContract("EAS", [schemaRegistry.address], {
+    client: { wallet: deployer },
+  });
+  return { schemaRegistry, eas };
+}
+
+export async function registerSchema(
+  schemaRegistry: ContractReturnType<"SchemaRegistry">,
+  resolverAddress: `0x${string}`,
+  revocable: boolean = true,
+): Promise<Hex> {
+  const expected = predictSchemaUID(resolverAddress, revocable);
+  await schemaRegistry.write.register([SCHEMA_STRING, resolverAddress, revocable]);
+  const stored = await schemaRegistry.read.getSchema([expected]);
+  assert.equal(stored.uid.toLowerCase(), expected.toLowerCase(), "schema UID mismatch after register");
+  return expected;
+}
+
+type AttestArgs = {
+  eas: ContractReturnType<"EAS">;
+  schemaUID: Hex;
+  recipient: `0x${string}`;
+  data: DesignationFields;
+  revocable?: boolean;
+};
+
+export async function attest({ eas, schemaUID, recipient, data, revocable = true }: AttestArgs): Promise<Hex> {
+  // simulate to read the returned UID, then send for real
+  const { result: uid } = await eas.simulate.attest([
+    {
+      schema: schemaUID,
+      data: {
+        recipient,
+        expirationTime: 0n,
+        revocable,
+        refUID: "0x0000000000000000000000000000000000000000000000000000000000000000",
+        data: encodeDesignation(data),
+        value: 0n,
+      },
+    },
+  ]);
+  await eas.write.attest([
+    {
+      schema: schemaUID,
+      data: {
+        recipient,
+        expirationTime: 0n,
+        revocable,
+        refUID: "0x0000000000000000000000000000000000000000000000000000000000000000",
+        data: encodeDesignation(data),
+        value: 0n,
+      },
+    },
+  ]);
+  return uid as Hex;
+}
+
+export async function revoke(
+  eas: ContractReturnType<"EAS">,
+  schemaUID: Hex,
+  uid: Hex,
+): Promise<void> {
+  await eas.write.revoke([
+    {
+      schema: schemaUID,
+      data: { uid, value: 0n },
+    },
+  ]);
+}
+
+export async function expectRevert(promise: Promise<unknown>, expectedMessage: string): Promise<void> {
+  await assert.rejects(promise, (error: unknown) => {
+    const err = error as {
+      shortMessage?: string;
+      message?: string;
+      details?: string;
+      cause?: {
+        shortMessage?: string;
+        message?: string;
+        details?: string;
+        errorName?: string;
+        cause?: { shortMessage?: string; message?: string; details?: string };
+      };
+    };
+    const parts = [
+      err.shortMessage,
+      err.message,
+      err.details,
+      err.cause?.shortMessage,
+      err.cause?.message,
+      err.cause?.details,
+      err.cause?.errorName,
+      err.cause?.cause?.shortMessage,
+      err.cause?.cause?.message,
+      err.cause?.cause?.details,
+    ].filter((part): part is string => Boolean(part));
+    const message = parts.join(" | ");
+    assert.ok(
+      message.includes(expectedMessage),
+      `Expected revert to include "${expectedMessage}", got "${message}"`,
+    );
+    return true;
+  });
+}
+
+export const ZERO_BYTES32 = "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
+export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
+```
+
+- [ ] **Step 2: Type-check the helpers compile (no test runs yet)**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.  If `ContractReturnType<"SchemaRegistry">` or `ContractReturnType<"EAS">` errors, run `npx hardhat compile` first to generate artifact-typed contract names.  If errors persist, the EAS package version may name contracts differently; inspect `artifacts/@ethereum-attestation-service/eas-contracts/contracts/` and adjust.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add test/helpers/eas.ts
+git commit -m "test: add EAS deployment + attestation helpers"
+```
+
+---
+
+### Task 5: SanctionsResolver skeleton + first failing test (constructor + initial state)
+
+The contract is grown via TDD across tasks 5-11.  This task lands the skeleton and the first behavior: constructor stores EAS, owner, and the optional initial trusted attester.
+
+**Files:**
+- Create: `contracts/SanctionsResolver.sol`
+- Create: `test/sanctions-resolver.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/sanctions-resolver.test.ts`:
+
+```ts
+import { before, describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { network } from "hardhat";
+import type { ContractReturnType, WalletClient } from "@nomicfoundation/hardhat-viem/types";
+import {
+  ZERO_ADDRESS,
+  deployEAS,
+  expectRevert,
+  registerSchema,
+  attest,
+  revoke,
+  type EASStack,
+} from "./helpers/eas.js";
+
+let viem: Awaited<ReturnType<typeof network.connect>>["viem"];
+let owner: WalletClient;
+let attester: WalletClient;
+let secondAttester: WalletClient;
+let recipient: WalletClient;
+let secondRecipient: WalletClient;
+let stranger: WalletClient;
+let newOwner: WalletClient;
+
+type Resolver = ContractReturnType<"SanctionsResolver">;
+
+type Stack = EASStack & {
+  resolver: Resolver;
+  schemaUID: `0x${string}`;
+};
+
+async function deployResolver(initialAttester: `0x${string}`): Promise<Stack> {
+  const eas = await deployEAS(viem, owner);
+  const resolver = await viem.deployContract(
+    "SanctionsResolver",
+    [eas.eas.address, initialAttester],
+    { client: { wallet: owner } },
+  );
+  const schemaUID = await registerSchema(eas.schemaRegistry, resolver.address, true);
+  return { ...eas, resolver, schemaUID };
+}
+
+function expectAddressEqual(actual: string, expected: string) {
+  assert.equal(actual.toLowerCase(), expected.toLowerCase());
+}
+
+before(async () => {
+  const connection = await network.connect();
+  viem = connection.viem;
+  const wallets = await viem.getWalletClients();
+  [owner, attester, secondAttester, recipient, secondRecipient, stranger, newOwner] = wallets;
+});
+
+describe("SanctionsResolver: constructor", () => {
+  it("records EAS, owner, and initial trusted attester", async () => {
+    const { resolver, eas } = await deployResolver(attester.account.address);
+
+    expectAddressEqual(await resolver.read.owner(), owner.account.address);
+    // SchemaResolver exposes the EAS address via a public getter; OZ v5 SchemaResolver names it `_eas`/`getEAS`.
+    expectAddressEqual(await resolver.read.getEAS(), eas.address);
+    assert.equal(await resolver.read.trustedAttesters([attester.account.address]), true);
+    assert.equal(await resolver.read.trustedAttesters([stranger.account.address]), false);
+  });
+
+  it("skips the allowlist entry when initial attester is zero", async () => {
+    const eas = await deployEAS(viem, owner);
+    const resolver = await viem.deployContract(
+      "SanctionsResolver",
+      [eas.eas.address, ZERO_ADDRESS],
+      { client: { wallet: owner } },
+    );
+    assert.equal(await resolver.read.trustedAttesters([ZERO_ADDRESS]), false);
+  });
+});
+```
+
+- [ ] **Step 2: Run the test to confirm failure**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: constructor"
+```
+
+Expected: FAIL with "Artifact for contract \"SanctionsResolver\" not found" or similar.  This confirms the test runs but the contract is missing.
+
+- [ ] **Step 3: Write the minimal contract**
+
+Create `contracts/SanctionsResolver.sol`:
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import { SchemaResolver } from "@ethereum-attestation-service/eas-contracts/contracts/resolver/SchemaResolver.sol";
+import { IEAS, Attestation } from "@ethereum-attestation-service/eas-contracts/contracts/IEAS.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+
+/// @title SanctionsResolver
+/// @notice EAS schema resolver that mirrors the active sanctioning attestation per recipient.
+/// @dev    Sanctioned status is encoded by attestation presence: an active (non-revoked) attestation
+///         from a trusted attester means the recipient is sanctioned.  Owner manages the
+///         trusted-attester allowlist; mutations only flow through EAS.
+contract SanctionsResolver is SchemaResolver, Ownable {
+    struct Designation {
+        bytes32 attestationUID; // bytes32(0) means not sanctioned
+        address attester;
+        uint64 attestedAt;
+    }
+
+    mapping(address => Designation) private _designations;
+    mapping(address => bool) public trustedAttesters;
+
+    event AttesterTrusted(address indexed attester, bool trusted);
+    event Sanctioned(address indexed account, address indexed attester, bytes32 uid);
+    event Unsanctioned(address indexed account, bytes32 uid);
+
+    constructor(IEAS eas, address initialAttester) SchemaResolver(eas) Ownable(msg.sender) {
+        if (initialAttester != address(0)) {
+            trustedAttesters[initialAttester] = true;
+            emit AttesterTrusted(initialAttester, true);
+        }
+    }
+
+    function onAttest(Attestation calldata, uint256) internal pure override returns (bool) {
+        return false;
+    }
+
+    function onRevoke(Attestation calldata, uint256) internal pure override returns (bool) {
+        return true;
+    }
+}
+```
+
+(`onAttest` returns `false` for now so the only behavior under test is the constructor.  Later tasks fill in real logic.)
+
+- [ ] **Step 4: Run the test to confirm pass**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: constructor"
+```
+
+Expected: 2 passing, 0 failing.  If `getEAS` is missing, inspect `node_modules/.../resolver/SchemaResolver.sol` for the actual public accessor (older versions named it `eas()`); update the test to call whichever accessor the installed version exposes.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add contracts/SanctionsResolver.sol test/sanctions-resolver.test.ts
+git commit -m "feat: SanctionsResolver skeleton with constructor + initial attester"
+```
+
+---
+
+### Task 6: `setAttesterTrust` (owner-managed allowlist)
+
+**Files:**
+- Modify: `contracts/SanctionsResolver.sol` (add the `setAttesterTrust` function)
+- Modify: `test/sanctions-resolver.test.ts` (add a new `describe("SanctionsResolver: trustedAttesters")` block)
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `test/sanctions-resolver.test.ts`:
+
+```ts
+describe("SanctionsResolver: trustedAttesters", () => {
+  it("owner can grant and revoke trust", async () => {
+    const { resolver } = await deployResolver(attester.account.address);
+
+    await resolver.write.setAttesterTrust([secondAttester.account.address, true]);
+    assert.equal(await resolver.read.trustedAttesters([secondAttester.account.address]), true);
+
+    await resolver.write.setAttesterTrust([secondAttester.account.address, false]);
+    assert.equal(await resolver.read.trustedAttesters([secondAttester.account.address]), false);
+  });
+
+  it("non-owner cannot setAttesterTrust", async () => {
+    const { resolver } = await deployResolver(attester.account.address);
+    const strangerResolver = await viem.getContractAt(
+      "SanctionsResolver",
+      resolver.address,
+      { client: { wallet: stranger } },
+    );
+    await expectRevert(
+      strangerResolver.write.setAttesterTrust([secondAttester.account.address, true]),
+      "OwnableUnauthorizedAccount",
+    );
+  });
+
+  it("emits AttesterTrusted on every change", async () => {
+    const { resolver } = await deployResolver(ZERO_ADDRESS);
+    const tx = await resolver.write.setAttesterTrust([attester.account.address, true]);
+    const publicClient = await viem.getPublicClient();
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: tx });
+    const events = await resolver.getEvents.AttesterTrusted({}, {
+      blockHash: receipt.blockHash,
+    });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].args.trusted, true);
+    expectAddressEqual(events[0].args.attester!, attester.account.address);
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to confirm failure**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: trustedAttesters"
+```
+
+Expected: FAIL with "Property 'setAttesterTrust' does not exist" or runtime "function selector was not recognized".
+
+- [ ] **Step 3: Add `setAttesterTrust` to the contract**
+
+Insert immediately after the constructor in `contracts/SanctionsResolver.sol`:
+
+```solidity
+/// @notice Add or remove an attester from the allowlist.
+/// @param attester Address whose trust is being toggled.
+/// @param trusted  True to grant, false to revoke.
+function setAttesterTrust(address attester, bool trusted) external onlyOwner {
+    trustedAttesters[attester] = trusted;
+    emit AttesterTrusted(attester, trusted);
+}
+```
+
+- [ ] **Step 4: Run tests to confirm pass**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: trustedAttesters"
+```
+
+Expected: 3 passing, 0 failing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add contracts/SanctionsResolver.sol test/sanctions-resolver.test.ts
+git commit -m "feat: owner-managed setAttesterTrust on SanctionsResolver"
+```
+
+---
+
+### Task 7: `onAttest` records the active designation
+
+**Files:**
+- Modify: `contracts/SanctionsResolver.sol` (real `onAttest` body)
+- Modify: `test/sanctions-resolver.test.ts` (add `describe("SanctionsResolver: onAttest")`)
+
+- [ ] **Step 1: Write the failing tests**
+
+Append:
+
+```ts
+describe("SanctionsResolver: onAttest", () => {
+  it("trusted attester populates the designation", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+
+    const attesterEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: attester },
+    });
+    const uid = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: {
+        source: "OFAC_SDN",
+        sourceUID: "1234",
+        category: "INDIVIDUAL",
+        evidenceURI: "ipfs://evidence",
+        designatedAt: 1700000000n,
+      },
+    });
+
+    const designation = await resolver.read.getDesignation([recipient.account.address]);
+    assert.equal(designation.attestationUID.toLowerCase(), uid.toLowerCase());
+    expectAddressEqual(designation.attester, attester.account.address);
+    assert.ok(designation.attestedAt > 0n);
+  });
+
+  it("untrusted attester is rejected (EAS reverts)", async () => {
+    const { eas, schemaUID } = await deployResolver(attester.account.address);
+    // secondAttester is NOT in the allowlist.
+    const strangerEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: secondAttester },
+    });
+    await expectRevert(
+      attest({
+        eas: strangerEAS,
+        schemaUID,
+        recipient: recipient.account.address,
+        data: {
+          source: "X",
+          sourceUID: "Y",
+          category: "Z",
+          evidenceURI: "",
+          designatedAt: 0n,
+        },
+      }),
+      "InvalidAttestation",
+    );
+  });
+
+  it("emits Sanctioned for trusted attestations", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const attesterEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: attester },
+    });
+
+    const publicClient = await viem.getPublicClient();
+    const startBlock = await publicClient.getBlockNumber();
+
+    await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: {
+        source: "OFAC_SDN",
+        sourceUID: "9",
+        category: "INDIVIDUAL",
+        evidenceURI: "",
+        designatedAt: 1n,
+      },
+    });
+
+    const events = await resolver.getEvents.Sanctioned({}, { fromBlock: startBlock });
+    assert.equal(events.length, 1);
+    expectAddressEqual(events[0].args.account!, recipient.account.address);
+    expectAddressEqual(events[0].args.attester!, attester.account.address);
+  });
+});
+```
+
+The "InvalidAttestation" string matches the error EAS throws when a resolver returns false; if the installed EAS version uses a different message (the OZ-style custom error name is `InvalidAttestation` or `AccessDenied` depending on version), check the actual revert message and update the assertion.
+
+- [ ] **Step 2: Run tests to confirm failure**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: onAttest"
+```
+
+Expected: first test FAILs because `onAttest` returns false unconditionally, so EAS reverts before state is recorded.
+
+- [ ] **Step 3: Implement `onAttest`**
+
+Replace the existing `onAttest` stub in `contracts/SanctionsResolver.sol`:
+
+```solidity
+function onAttest(Attestation calldata att, uint256 /*value*/) internal override returns (bool) {
+    if (!trustedAttesters[att.attester]) {
+        return false;
+    }
+
+    _designations[att.recipient] = Designation({
+        attestationUID: att.uid,
+        attester: att.attester,
+        attestedAt: uint64(block.timestamp)
+    });
+    emit Sanctioned(att.recipient, att.attester, att.uid);
+    return true;
+}
+```
+
+You will also need a `getDesignation` view to satisfy the test:
+
+```solidity
+function getDesignation(address account) external view returns (Designation memory) {
+    return _designations[account];
+}
+```
+
+Add it after `setAttesterTrust`.
+
+- [ ] **Step 4: Run tests to confirm pass**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: onAttest"
+```
+
+Expected: 3 passing, 0 failing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add contracts/SanctionsResolver.sol test/sanctions-resolver.test.ts
+git commit -m "feat: onAttest records designation, getDesignation view"
+```
+
+---
+
+### Task 8: `onRevoke` clears the active designation
+
+**Files:**
+- Modify: `contracts/SanctionsResolver.sol` (real `onRevoke` body)
+- Modify: `test/sanctions-resolver.test.ts` (add `describe("SanctionsResolver: onRevoke")`)
+
+- [ ] **Step 1: Write the failing tests**
+
+Append:
+
+```ts
+describe("SanctionsResolver: onRevoke", () => {
+  it("revoking the active UID clears the designation and emits Unsanctioned", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const attesterEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: attester },
+    });
+
+    const uid = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: {
+        source: "S",
+        sourceUID: "U",
+        category: "C",
+        evidenceURI: "",
+        designatedAt: 0n,
+      },
+    });
+
+    const publicClient = await viem.getPublicClient();
+    const startBlock = await publicClient.getBlockNumber();
+
+    await revoke(attesterEAS, schemaUID, uid);
+
+    const designation = await resolver.read.getDesignation([recipient.account.address]);
+    assert.equal(
+      designation.attestationUID.toLowerCase(),
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+    );
+    assert.equal(designation.attester.toLowerCase(), ZERO_ADDRESS);
+    assert.equal(designation.attestedAt, 0n);
+
+    const events = await resolver.getEvents.Unsanctioned({}, { fromBlock: startBlock });
+    assert.equal(events.length, 1);
+    expectAddressEqual(events[0].args.account!, recipient.account.address);
+    assert.equal(events[0].args.uid!.toLowerCase(), uid.toLowerCase());
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to confirm failure**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: onRevoke"
+```
+
+Expected: FAIL — designation still set after revoke (current `onRevoke` is a no-op that returns true).
+
+- [ ] **Step 3: Implement `onRevoke`**
+
+Replace the `onRevoke` stub in `contracts/SanctionsResolver.sol`:
+
+```solidity
+function onRevoke(Attestation calldata att, uint256 /*value*/) internal override returns (bool) {
+    // Only clear state if this UID is the currently active one for the recipient.
+    // Stale revocations of superseded attestations are silent no-ops (last-write semantics).
+    if (_designations[att.recipient].attestationUID == att.uid) {
+        delete _designations[att.recipient];
+        emit Unsanctioned(att.recipient, att.uid);
+    }
+    return true;
+}
+```
+
+- [ ] **Step 4: Run tests to confirm pass**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: onRevoke"
+```
+
+Expected: 1 passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add contracts/SanctionsResolver.sol test/sanctions-resolver.test.ts
+git commit -m "feat: onRevoke clears active designation, no-op on stale UID"
+```
+
+---
+
+### Task 9: Last-attestation-wins + stale revocation no-op
+
+**Files:**
+- Modify: `test/sanctions-resolver.test.ts` (extend the `onRevoke` block + add a `describe("SanctionsResolver: re-attestation")`)
+
+This task adds tests only; no contract change.  It locks in the invariants from the spec ("Last-attestation-wins per recipient" and "Stale revocations are no-ops") so future edits cannot regress them silently.
+
+- [ ] **Step 1: Write the tests**
+
+Append:
+
+```ts
+describe("SanctionsResolver: re-attestation", () => {
+  it("a second attestation supersedes the first; old UID becomes stale", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const attesterEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: attester },
+    });
+
+    const uidA = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+    });
+    const uidB = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+    });
+
+    assert.notEqual(uidA.toLowerCase(), uidB.toLowerCase());
+    const designation = await resolver.read.getDesignation([recipient.account.address]);
+    assert.equal(designation.attestationUID.toLowerCase(), uidB.toLowerCase());
+  });
+
+  it("revoking the stale (superseded) UID is a no-op on resolver state", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const attesterEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: attester },
+    });
+
+    const uidA = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+    });
+    const uidB = await attest({
+      eas: attesterEAS,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+    });
+
+    // revoke the stale one
+    await revoke(attesterEAS, schemaUID, uidA);
+
+    const designation = await resolver.read.getDesignation([recipient.account.address]);
+    assert.equal(designation.attestationUID.toLowerCase(), uidB.toLowerCase());
+  });
+
+  it("multi-trusted-attester: latest write from any trusted attester wins", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    await resolver.write.setAttesterTrust([secondAttester.account.address, true]);
+
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+    const easB = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: secondAttester },
+    });
+
+    await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+    });
+    const uidB = await attest({
+      eas: easB,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+    });
+
+    const designation = await resolver.read.getDesignation([recipient.account.address]);
+    assert.equal(designation.attestationUID.toLowerCase(), uidB.toLowerCase());
+    expectAddressEqual(designation.attester, secondAttester.account.address);
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to confirm pass (no contract changes needed)**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: re-attestation"
+```
+
+Expected: 3 passing.  These should already pass with the contract as-is; if any fail, the existing `onAttest` / `onRevoke` logic is wrong and needs to be revisited before adding any read interface.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add test/sanctions-resolver.test.ts
+git commit -m "test: lock in last-write semantics and stale-revoke no-op"
+```
+
+---
+
+### Task 10: `isSanctioned(address)` and `isSanctioned(address[])`
+
+**Files:**
+- Modify: `contracts/SanctionsResolver.sol`
+- Modify: `test/sanctions-resolver.test.ts` (add `describe("SanctionsResolver: isSanctioned")`)
+
+- [ ] **Step 1: Write the failing tests**
+
+Append:
+
+```ts
+describe("SanctionsResolver: isSanctioned", () => {
+  it("returns false for unknown addresses", async () => {
+    const { resolver } = await deployResolver(attester.account.address);
+    assert.equal(await resolver.read.isSanctioned([recipient.account.address]), false);
+  });
+
+  it("returns true after a trusted attestation lands", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+    await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "S", sourceUID: "U", category: "C", evidenceURI: "", designatedAt: 0n },
+    });
+    assert.equal(await resolver.read.isSanctioned([recipient.account.address]), true);
+  });
+
+  it("batch overload returns one bool per input in order", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+    await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "S", sourceUID: "U", category: "C", evidenceURI: "", designatedAt: 0n },
+    });
+
+    const out = await resolver.read.isSanctionedBatch([
+      [recipient.account.address, secondRecipient.account.address, recipient.account.address],
+    ]);
+    assert.deepEqual(out, [true, false, true]);
+  });
+
+  it("returns false again after revocation", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+    const uid = await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "S", sourceUID: "U", category: "C", evidenceURI: "", designatedAt: 0n },
+    });
+    await revoke(easA, schemaUID, uid);
+    assert.equal(await resolver.read.isSanctioned([recipient.account.address]), false);
+  });
+});
+```
+
+Note on the batch overload: viem maps Solidity overloads on the same function name to the base name plus the variant signature; in practice with hardhat-viem, the cleanest path is to expose the batch overload under a distinct Solidity name (`isSanctionedBatch`) so consumers and viem can call it unambiguously while still preserving the Chainalysis-compatible single-argument `isSanctioned(address)` signature.  The test above uses `isSanctionedBatch`.  This is a deliberate divergence from the spec's literal `isSanctioned(address[])` overload to avoid client-tooling friction; document this in the README in task 25.
+
+- [ ] **Step 2: Run tests to confirm failure**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: isSanctioned"
+```
+
+Expected: FAIL with "Property 'isSanctioned' does not exist".
+
+- [ ] **Step 3: Add the read interface**
+
+Insert in `contracts/SanctionsResolver.sol` (after `getDesignation`):
+
+```solidity
+/// @notice Chainalysis-compatible single-address sanctioned check.
+/// @param account Address to check.
+/// @return True iff there is a non-revoked attestation from a trusted attester for this address.
+function isSanctioned(address account) external view returns (bool) {
+    return _designations[account].attestationUID != bytes32(0);
+}
+
+/// @notice Batch sanctioned check.
+/// @param accounts Addresses to check.
+/// @return out One bool per input, same order.
+function isSanctionedBatch(address[] calldata accounts) external view returns (bool[] memory out) {
+    out = new bool[](accounts.length);
+    for (uint256 i = 0; i < accounts.length; i++) {
+        out[i] = _designations[accounts[i]].attestationUID != bytes32(0);
+    }
+}
+```
+
+- [ ] **Step 4: Run tests to confirm pass**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: isSanctioned"
+```
+
+Expected: 4 passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add contracts/SanctionsResolver.sol test/sanctions-resolver.test.ts
+git commit -m "feat: isSanctioned + isSanctionedBatch read interface"
+```
+
+---
+
+### Task 11: Ownership transfer behavior
+
+**Files:**
+- Modify: `test/sanctions-resolver.test.ts` (add `describe("SanctionsResolver: ownership")`)
+
+No contract change.  This task locks in: standard `Ownable.transferOwnership` works, post-transfer the new owner can `setAttesterTrust`, and the old owner cannot.  Unlike the legacy `AddressRegistry`, ownership only governs the allowlist, so we deliberately do **not** override `_transferOwnership` to keep any other state in sync.
+
+- [ ] **Step 1: Write the tests**
+
+Append:
+
+```ts
+describe("SanctionsResolver: ownership", () => {
+  it("transferOwnership moves allowlist control", async () => {
+    const { resolver } = await deployResolver(attester.account.address);
+
+    await resolver.write.transferOwnership([newOwner.account.address]);
+    expectAddressEqual(await resolver.read.owner(), newOwner.account.address);
+
+    const oldOwnerResolver = await viem.getContractAt(
+      "SanctionsResolver",
+      resolver.address,
+      { client: { wallet: owner } },
+    );
+    await expectRevert(
+      oldOwnerResolver.write.setAttesterTrust([secondAttester.account.address, true]),
+      "OwnableUnauthorizedAccount",
+    );
+
+    const newOwnerResolver = await viem.getContractAt(
+      "SanctionsResolver",
+      resolver.address,
+      { client: { wallet: newOwner } },
+    );
+    await newOwnerResolver.write.setAttesterTrust([secondAttester.account.address, true]);
+    assert.equal(await resolver.read.trustedAttesters([secondAttester.account.address]), true);
+  });
+
+  it("existing trusted attesters are preserved across ownership transfer", async () => {
+    const { resolver } = await deployResolver(attester.account.address);
+    await resolver.write.transferOwnership([newOwner.account.address]);
+    assert.equal(await resolver.read.trustedAttesters([attester.account.address]), true);
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to confirm pass**
+
+Run:
+
+```bash
+npx hardhat test --test-name-pattern "SanctionsResolver: ownership"
+```
+
+Expected: 2 passing.  These pass without contract changes because `Ownable` is included unmodified.
+
+- [ ] **Step 3: Run the full suite to confirm nothing has regressed**
+
+Run:
+
+```bash
+npm test
+```
+
+Expected: all SanctionsResolver tests pass.  The legacy `AddressRegistry` tests still pass too; that contract is untouched.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add test/sanctions-resolver.test.ts
+git commit -m "test: ownership transfer governs trustedAttesters allowlist"
+```
+
+---
+
+### Task 12: EAS client utilities (chain table + schema constants + encoding)
+
+**Files:**
+- Create: `scripts/utils/eas.ts`
+
+- [ ] **Step 1: Write the helpers**
+
+Create `scripts/utils/eas.ts`:
+
+```ts
+import { encodeAbiParameters, encodePacked, keccak256, type Address, type Hex } from "viem";
+
+export const SCHEMA_STRING =
+  "string source,string sourceUID,string category,string evidenceURI,uint64 designatedAt";
+
+/// EAS canonical contract addresses per chain.  Mainnet only at launch; extend when
+/// new deployments are added.
+const EAS_ADDRESSES: Record<number, { eas: Address; schemaRegistry: Address }> = {
+  1: {
+    eas: "0xA1207F3BBa224E2c9c3c6D5aF63D0eb1582Ce587",
+    schemaRegistry: "0xA7b39296258348C78294F95B872b282326A97BDF",
+  },
+};
+
+export function getEASAddresses(chainId: number): { eas: Address; schemaRegistry: Address } {
+  const entry = EAS_ADDRESSES[chainId];
+  if (!entry) {
+    throw new Error(
+      `EAS addresses not configured for chainId ${chainId}.  Add an entry to scripts/utils/eas.ts.`,
+    );
+  }
+  return entry;
+}
+
+export function predictSchemaUID(resolver: Address, revocable: boolean): Hex {
+  return keccak256(
+    encodePacked(["string", "address", "bool"], [SCHEMA_STRING, resolver, revocable]),
+  );
+}
+
+export type DesignationFields = {
+  source: string;
+  sourceUID: string;
+  category: string;
+  evidenceURI: string;
+  designatedAt: bigint;
+};
+
+export function encodeDesignation(fields: DesignationFields): Hex {
+  return encodeAbiParameters(
+    [
+      { name: "source", type: "string" },
+      { name: "sourceUID", type: "string" },
+      { name: "category", type: "string" },
+      { name: "evidenceURI", type: "string" },
+      { name: "designatedAt", type: "uint64" },
+    ],
+    [fields.source, fields.sourceUID, fields.category, fields.evidenceURI, fields.designatedAt],
+  );
+}
+
+export const ZERO_BYTES32 =
+  "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
+```
+
+- [ ] **Step 2: Type-check**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/utils/eas.ts
+git commit -m "feat: EAS chain table, schema string, and data encoder"
+```
+
+---
+
+### Task 13: Resolver-side script utilities
+
+**Files:**
+- Create: `scripts/utils/resolver.ts`
+
+This is the new CLI/contract-loading library that all action scripts will consume.  It deliberately duplicates the option-parsing helpers from `scripts/utils/registry.ts` so the legacy file can be removed wholesale at the end without touching new code.
+
+- [ ] **Step 1: Write the module**
+
+Create `scripts/utils/resolver.ts`:
+
+```ts
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
+import { network } from "hardhat";
+import type { ContractReturnType, WalletClient } from "@nomicfoundation/hardhat-viem/types";
+import { type Address, getAddress } from "viem";
+
+type NetworkConnection = Awaited<ReturnType<typeof network.connect>>;
+type ViemHelpers = NetworkConnection["viem"];
+
+type WalletClients = Awaited<ReturnType<ViemHelpers["getWalletClients"]>>;
+
+export type DeploymentRecord = {
+  chainName: string;
+  address: string;
+  deployer: string;
+  owner: string;
+  initialAttester: string;
+  easAddress: string;
+  schemaUID?: string;
+  deployedAt: string;
+};
+
+export type DeploymentManifest = Record<string, Record<string, DeploymentRecord>>;
+
+export async function connectViem(): Promise<{
+  viem: ViemHelpers;
+  chainId: number;
+  networkName: string;
+}> {
+  const connection = await network.connect();
+  return { viem: connection.viem, chainId: connection.id, networkName: connection.networkName };
+}
+
+export async function resolveWallet(
+  viem: ViemHelpers,
+  requester?: string,
+): Promise<WalletClient> {
+  const wallets: WalletClients = await viem.getWalletClients();
+  if (wallets.length === 0) {
+    throw new Error("No wallet clients available.  Configure accounts for this network.");
+  }
+  if (!requester) {
+    return wallets[0];
+  }
+  const normalized = requester.toLowerCase();
+  const found = wallets.find((wallet) => wallet.account.address.toLowerCase() === normalized);
+  if (!found) {
+    throw new Error(`Wallet for address ${requester} not configured on this network.`);
+  }
+  return found;
+}
+
+export async function getResolverContract(
+  viem: ViemHelpers,
+  address: string,
+  wallet: WalletClient,
+): Promise<ContractReturnType<"SanctionsResolver">> {
+  if (!address) {
+    throw new Error("Resolver address is required.");
+  }
+  return viem.getContractAt("SanctionsResolver", getAddress(address), { client: { wallet } });
+}
+
+export async function getEASContract(
+  viem: ViemHelpers,
+  address: string,
+  wallet: WalletClient,
+): Promise<ContractReturnType<"EAS">> {
+  return viem.getContractAt("EAS", getAddress(address), { client: { wallet } });
+}
+
+export async function getSchemaRegistryContract(
+  viem: ViemHelpers,
+  address: string,
+  wallet: WalletClient,
+): Promise<ContractReturnType<"SchemaRegistry">> {
+  return viem.getContractAt("SchemaRegistry", getAddress(address), { client: { wallet } });
+}
+
+export async function loadDeployments(): Promise<DeploymentManifest> {
+  const filePath = resolve(process.cwd(), "deployments.json");
+  try {
+    const text = await readFile(filePath, "utf8");
+    return JSON.parse(text) as DeploymentManifest;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return {};
+    }
+    throw error;
+  }
+}
+
+export async function loadResolverDeployment(chainId: number): Promise<DeploymentRecord> {
+  const manifest = await loadDeployments();
+  const record = manifest[String(chainId)]?.SanctionsResolver;
+  if (!record) {
+    throw new Error(
+      `No SanctionsResolver deployment recorded for chainId ${chainId} in deployments.json.`,
+    );
+  }
+  return record;
+}
+
+export function parseAddressList(value: string | undefined, field: string): Address[] {
+  if (!value) {
+    throw new Error(`${field} is required`);
+  }
+  const items = value
+    .split(",")
+    .map((entry) => getAddress(entry.trim()))
+    .filter(Boolean);
+  if (items.length === 0) {
+    throw new Error(`${field} must include at least one address`);
+  }
+  return items;
+}
+
+export function resolveOption(flag: string, envKeys: string[] = []): string | undefined {
+  const separateIndex = process.argv.indexOf(flag);
+  if (separateIndex !== -1 && separateIndex + 1 < process.argv.length) {
+    const value = process.argv[separateIndex + 1];
+    if (!value.startsWith("--")) {
+      return value;
+    }
+  }
+  const withEquals = process.argv.find((arg) => arg.startsWith(`${flag}=`));
+  if (withEquals) {
+    const [, value = ""] = withEquals.split(/=(.+)/, 2);
+    if (value) {
+      return value;
+    }
+  }
+  const normalized = flag.replace(/^--/, "").replace(/-/g, "_");
+  const defaultCandidates = [normalized.toUpperCase(), normalized];
+  const candidates = [...envKeys, ...defaultCandidates];
+  for (const key of candidates) {
+    const value = process.env[key];
+    if (value) return value;
+  }
+  return undefined;
+}
+
+export function requireOption(flag: string, envKeys: string[] = []): string {
+  const value = resolveOption(flag, envKeys);
+  if (!value) {
+    const envHint = envKeys.length > 0 ? ` or environment variable(s) ${envKeys.join(", ")}` : "";
+    throw new Error(`Missing required option ${flag}${envHint}`);
+  }
+  return value;
+}
+
+export function logSuccess(message: string, metadata: Record<string, unknown> = {}): void {
+  const entries = Object.entries(metadata)
+    .map(([key, val]) => `${key}=${String(val)}`)
+    .join(" ");
+  console.log(entries ? `${message} (${entries})` : message);
+}
+```
+
+- [ ] **Step 2: Type-check**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/utils/resolver.ts
+git commit -m "feat: resolver script utilities (CLI parsing, contract loaders, deployment reader)"
+```
+
+---
+
+### Task 14: Replace `scripts/deploy.ts`
+
+**Files:**
+- Modify: `scripts/deploy.ts` (rewrite to deploy `SanctionsResolver`)
+
+The deployment record format gains `initialAttester`, `easAddress`, and an optional `schemaUID` (filled in by the schema-registration step in task 15).  Existing `AddressRegistry` records on other chains are preserved untouched.
+
+- [ ] **Step 1: Rewrite the deploy script**
+
+Replace the contents of `scripts/deploy.ts`:
+
+```ts
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
+import { network } from "hardhat";
+import { getEASAddresses } from "./utils/eas.js";
+import { requireOption, resolveOption } from "./utils/resolver.js";
+
+async function main() {
+  const connection = await network.connect();
+  const { viem, id: chainId, networkName } = connection;
+
+  const initialAttesterArg = requireOption("--initial-attester", [
+    "INITIAL_ATTESTER",
+    "RESOLVER_INITIAL_ATTESTER",
+  ]);
+
+  // Allow callers to override the EAS address (e.g. for testnets); otherwise look it up.
+  const easOverride = resolveOption("--eas", ["EAS", "EAS_ADDRESS"]);
+  const easAddress = easOverride ?? getEASAddresses(chainId).eas;
+
+  const [walletClient] = await viem.getWalletClients();
+  if (!walletClient) {
+    throw new Error("No wallet client available.  Configure accounts for this network.");
+  }
+  const deployer = walletClient.account.address;
+
+  console.log(`Deploying SanctionsResolver`);
+  console.log(`  network        : ${networkName} (chainId ${chainId})`);
+  console.log(`  deployer       : ${deployer}`);
+  console.log(`  EAS            : ${easAddress}`);
+  console.log(`  initial attester: ${initialAttesterArg}`);
+
+  const resolver = await viem.deployContract(
+    "SanctionsResolver",
+    [easAddress, initialAttesterArg],
+    { client: { wallet: walletClient } },
+  );
+
+  console.log(`SanctionsResolver deployed to: ${resolver.address}`);
+
+  await recordDeployment({
+    networkName,
+    chainId,
+    address: resolver.address,
+    deployer,
+    owner: deployer,
+    initialAttester: initialAttesterArg,
+    easAddress,
+  });
+}
+
+type DeploymentMetadata = {
+  networkName: string;
+  chainId: number;
+  address: string;
+  deployer: string;
+  owner: string;
+  initialAttester: string;
+  easAddress: string;
+};
+
+type DeploymentRecord = DeploymentMetadata & { deployedAt: string; chainName: string; schemaUID?: string };
+type DeploymentManifest = Record<string, Record<string, DeploymentRecord>>;
+
+async function recordDeployment(metadata: DeploymentMetadata): Promise<void> {
+  const filePath = resolve(process.cwd(), "deployments.json");
+
+  let manifest: DeploymentManifest = {};
+  try {
+    const current = await readFile(filePath, "utf8");
+    manifest = JSON.parse(current) as DeploymentManifest;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  const chainKey = String(metadata.chainId);
+  const chainManifest = manifest[chainKey] ?? {};
+  chainManifest.SanctionsResolver = {
+    chainName: metadata.networkName,
+    address: metadata.address,
+    deployer: metadata.deployer,
+    owner: metadata.owner,
+    initialAttester: metadata.initialAttester,
+    easAddress: metadata.easAddress,
+    deployedAt: new Date().toISOString(),
+  };
+  manifest[chainKey] = chainManifest;
+
+  await writeFile(filePath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  console.log(`Recorded deployment metadata at ${filePath}`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+```
+
+- [ ] **Step 2: Type-check**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.
+
+- [ ] **Step 3: Smoke-test the deploy on the simulated mainnet network**
+
+Run:
+
+```bash
+INITIAL_ATTESTER=0x000000000000000000000000000000000000dEaD \
+EAS=0x000000000000000000000000000000000000bEEF \
+npx hardhat run scripts/deploy.ts --network hardhatMainnet
+```
+
+Expected: contract deploys (the EAS address is not validated at deploy time so any 20-byte address works for the smoke test); `deployments.json` gains a chainId entry.  Discard the resulting diff to `deployments.json` before committing (it is a local artifact only).
+
+```bash
+git checkout -- deployments.json
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add scripts/deploy.ts
+git commit -m "feat: deploy SanctionsResolver with EAS address from chain table"
+```
+
+---
+
+### Task 15: Schema registration script
+
+**Files:**
+- Create: `scripts/register-schema.ts`
+
+- [ ] **Step 1: Write the script**
+
+Create `scripts/register-schema.ts`:
+
+```ts
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
+import { getEASAddresses, predictSchemaUID, SCHEMA_STRING } from "./utils/eas.js";
+import {
+  connectViem,
+  getSchemaRegistryContract,
+  loadResolverDeployment,
+  resolveOption,
+  resolveWallet,
+} from "./utils/resolver.js";
+
+const REVOCABLE = true;
+
+const fromArg = resolveOption("--from", ["FROM"]);
+const registryOverride = resolveOption("--schema-registry", ["SCHEMA_REGISTRY"]);
+
+const { viem, chainId } = await connectViem();
+const wallet = await resolveWallet(viem, fromArg);
+
+const deployment = await loadResolverDeployment(chainId);
+const schemaRegistryAddress = registryOverride ?? getEASAddresses(chainId).schemaRegistry;
+const registry = await getSchemaRegistryContract(viem, schemaRegistryAddress, wallet);
+
+const expectedUID = predictSchemaUID(deployment.address as `0x${string}`, REVOCABLE);
+console.log(`Registering schema`);
+console.log(`  schema    : ${SCHEMA_STRING}`);
+console.log(`  resolver  : ${deployment.address}`);
+console.log(`  revocable : ${REVOCABLE}`);
+console.log(`  expected UID: ${expectedUID}`);
+
+const existing = await registry.read.getSchema([expectedUID]);
+if (existing.uid.toLowerCase() === expectedUID.toLowerCase()) {
+  console.log(`Schema already registered.  Skipping submit, recording UID.`);
+} else {
+  await registry.write.register([SCHEMA_STRING, deployment.address as `0x${string}`, REVOCABLE]);
+  const stored = await registry.read.getSchema([expectedUID]);
+  if (stored.uid.toLowerCase() !== expectedUID.toLowerCase()) {
+    throw new Error(`Schema UID mismatch: expected ${expectedUID}, got ${stored.uid}`);
+  }
+  console.log(`Schema registered.`);
+}
+
+await persistSchemaUID(chainId, expectedUID);
+console.log(`Recorded schemaUID in deployments.json.`);
+
+async function persistSchemaUID(chain: number, uid: `0x${string}`): Promise<void> {
+  const filePath = resolve(process.cwd(), "deployments.json");
+  const text = await readFile(filePath, "utf8");
+  const manifest = JSON.parse(text) as Record<string, Record<string, Record<string, unknown>>>;
+  const chainKey = String(chain);
+  if (!manifest[chainKey] || !manifest[chainKey].SanctionsResolver) {
+    throw new Error(`No SanctionsResolver deployment for chainId ${chain}; deploy first.`);
+  }
+  manifest[chainKey].SanctionsResolver.schemaUID = uid;
+  await writeFile(filePath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+```
+
+- [ ] **Step 2: Type-check**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.
+
+- [ ] **Step 3: Smoke-test (only if Task 14's smoke test was repeated to seed deployments.json with the simulated chainId; otherwise skip the integration test on a live registry)**
+
+This step exists for completeness; the schema registry on `hardhatMainnet` is not deployed by default, so a true end-to-end smoke test of `register-schema.ts` requires either a forked-mainnet network or seeding a SchemaRegistry on a local network.  Skip this step unless that infrastructure is set up.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add scripts/register-schema.ts
+git commit -m "feat: register sanctions schema and persist UID in deployments.json"
+```
+
+---
+
+### Task 16: `trust-attester` action script
+
+**Files:**
+- Create: `scripts/actions/trust-attester.ts`
+
+- [ ] **Step 1: Write the script**
+
+Create `scripts/actions/trust-attester.ts`:
+
+```ts
+import {
+  connectViem,
+  getResolverContract,
+  loadResolverDeployment,
+  logSuccess,
+  parseAddressList,
+  requireOption,
+  resolveOption,
+  resolveWallet,
+} from "../utils/resolver.js";
+
+const accountsArg = requireOption("--accounts", ["ACCOUNTS", "RESOLVER_ACCOUNTS"]);
+const fromArg = resolveOption("--from", ["FROM"]);
+
+const accounts = parseAddressList(accountsArg, "--accounts");
+
+const { viem, chainId } = await connectViem();
+const wallet = await resolveWallet(viem, fromArg);
+const deployment = await loadResolverDeployment(chainId);
+const resolver = await getResolverContract(viem, deployment.address, wallet);
+
+for (const account of accounts) {
+  await resolver.write.setAttesterTrust([account, true]);
+  logSuccess("Attester trusted", { resolver: deployment.address, attester: account });
+}
+```
+
+- [ ] **Step 2: Type-check**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/actions/trust-attester.ts
+git commit -m "feat: trust-attester script (setAttesterTrust true)"
+```
+
+---
+
+### Task 17: `untrust-attester` action script
+
+**Files:**
+- Create: `scripts/actions/untrust-attester.ts`
+
+- [ ] **Step 1: Write the script**
+
+Create `scripts/actions/untrust-attester.ts`:
+
+```ts
+import {
+  connectViem,
+  getResolverContract,
+  loadResolverDeployment,
+  logSuccess,
+  parseAddressList,
+  requireOption,
+  resolveOption,
+  resolveWallet,
+} from "../utils/resolver.js";
+
+const accountsArg = requireOption("--accounts", ["ACCOUNTS", "RESOLVER_ACCOUNTS"]);
+const fromArg = resolveOption("--from", ["FROM"]);
+
+const accounts = parseAddressList(accountsArg, "--accounts");
+
+const { viem, chainId } = await connectViem();
+const wallet = await resolveWallet(viem, fromArg);
+const deployment = await loadResolverDeployment(chainId);
+const resolver = await getResolverContract(viem, deployment.address, wallet);
+
+for (const account of accounts) {
+  await resolver.write.setAttesterTrust([account, false]);
+  logSuccess("Attester untrusted", { resolver: deployment.address, attester: account });
+}
+```
+
+- [ ] **Step 2: Type-check**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/actions/untrust-attester.ts
+git commit -m "feat: untrust-attester script (setAttesterTrust false)"
+```
+
+---
+
+### Task 18: `list-trusted-attesters` action script (event-derived)
+
+**Files:**
+- Create: `scripts/actions/list-trusted-attesters.ts`
+
+The contract does not expose an enumerable allowlist; the canonical recovery path is reading `AttesterTrusted` events and replaying them.  The script also calls `trustedAttesters(addr)` per derived address as a sanity check (handles the case where a single address was added then removed: the final read says `false` and we skip it from the output).
+
+- [ ] **Step 1: Write the script**
+
+Create `scripts/actions/list-trusted-attesters.ts`:
+
+```ts
+import {
+  connectViem,
+  getResolverContract,
+  loadResolverDeployment,
+  resolveOption,
+  resolveWallet,
+} from "../utils/resolver.js";
+
+const fromArg = resolveOption("--from", ["FROM"]);
+
+const { viem, chainId } = await connectViem();
+const wallet = await resolveWallet(viem, fromArg);
+const deployment = await loadResolverDeployment(chainId);
+const resolver = await getResolverContract(viem, deployment.address, wallet);
+
+const events = await resolver.getEvents.AttesterTrusted({}, { fromBlock: 0n });
+const candidates = new Set<string>();
+for (const event of events) {
+  if (event.args.attester) candidates.add(event.args.attester.toLowerCase());
+}
+
+const entries: Array<{ attester: string; trusted: boolean }> = [];
+for (const candidate of candidates) {
+  const trusted = await resolver.read.trustedAttesters([candidate as `0x${string}`]);
+  if (trusted) {
+    entries.push({ attester: candidate, trusted: true });
+  }
+}
+
+console.log(JSON.stringify({ resolver: deployment.address, trustedAttesters: entries }, null, 2));
+```
+
+- [ ] **Step 2: Type-check**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/actions/list-trusted-attesters.ts
+git commit -m "feat: list-trusted-attesters from AttesterTrusted events"
+```
+
+---
+
+### Task 19: `sanction` action script (bulk EAS attest)
+
+**Files:**
+- Create: `scripts/actions/sanction.ts`
+
+The script accepts a JSON file path via `--input` (or `INPUT` env var) shaped like:
+
+```json
+[
+  {
+    "address": "0x0123...",
+    "source": "OFAC_SDN",
+    "sourceUID": "12345",
+    "category": "INDIVIDUAL",
+    "evidenceURI": "ipfs://...",
+    "designatedAt": 1700000000
+  }
+]
+```
+
+It batches all entries into a single `multiAttest` call and parses `Attested` events from the receipt to print recipient → UID pairs (so the operator can save them for later revocation needs, even though the resolver itself is the canonical UID lookup).
+
+- [ ] **Step 1: Write the script**
+
+Create `scripts/actions/sanction.ts`:
+
+```ts
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
+import { decodeEventLog, getAddress, parseAbiItem, type Hex } from "viem";
+
+import { encodeDesignation } from "../utils/eas.js";
+import {
+  connectViem,
+  getEASContract,
+  loadResolverDeployment,
+  requireOption,
+  resolveOption,
+  resolveWallet,
+} from "../utils/resolver.js";
+
+type SanctionEntry = {
+  address: string;
+  source: string;
+  sourceUID: string;
+  category: string;
+  evidenceURI: string;
+  designatedAt: number | string;
+};
+
+const inputPath = requireOption("--input", ["INPUT", "RESOLVER_INPUT"]);
+const fromArg = resolveOption("--from", ["FROM"]);
+
+const text = await readFile(resolve(process.cwd(), inputPath), "utf8");
+const entries = JSON.parse(text) as SanctionEntry[];
+if (!Array.isArray(entries) || entries.length === 0) {
+  throw new Error(`--input must be a non-empty JSON array of sanction entries`);
+}
+
+const { viem, chainId } = await connectViem();
+const wallet = await resolveWallet(viem, fromArg);
+const deployment = await loadResolverDeployment(chainId);
+if (!deployment.schemaUID) {
+  throw new Error(
+    `No schemaUID recorded for chainId ${chainId}.  Run scripts/register-schema.ts first.`,
+  );
+}
+const eas = await getEASContract(viem, deployment.easAddress, wallet);
+
+const requestData = entries.map((entry) => ({
+  recipient: getAddress(entry.address),
+  expirationTime: 0n,
+  revocable: true,
+  refUID: "0x0000000000000000000000000000000000000000000000000000000000000000" as Hex,
+  data: encodeDesignation({
+    source: entry.source,
+    sourceUID: entry.sourceUID,
+    category: entry.category,
+    evidenceURI: entry.evidenceURI,
+    designatedAt: BigInt(entry.designatedAt),
+  }),
+  value: 0n,
+}));
+
+const txHash = await eas.write.multiAttest([
+  [
+    {
+      schema: deployment.schemaUID as Hex,
+      data: requestData,
+    },
+  ],
+]);
+const publicClient = await viem.getPublicClient();
+const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+const attestedEventAbi = parseAbiItem(
+  "event Attested(address indexed recipient, address indexed attester, bytes32 uid, bytes32 indexed schemaUID)",
+);
+const uids: Array<{ recipient: string; uid: string }> = [];
+for (const log of receipt.logs) {
+  if (log.address.toLowerCase() !== deployment.easAddress.toLowerCase()) continue;
+  try {
+    const decoded = decodeEventLog({ abi: [attestedEventAbi], data: log.data, topics: log.topics });
+    if (decoded.eventName === "Attested") {
+      uids.push({ recipient: decoded.args.recipient, uid: decoded.args.uid });
+    }
+  } catch {
+    // not an Attested event, ignore
+  }
+}
+
+console.log(
+  JSON.stringify(
+    { resolver: deployment.address, txHash, sanctioned: uids },
+    null,
+    2,
+  ),
+);
+```
+
+If the EAS package's `Attested` event signature differs (older versions placed `schemaUID` non-indexed, or used different parameter ordering), inspect the EAS contract source under `node_modules/.../IEAS.sol` and update the `parseAbiItem` literal to match.
+
+- [ ] **Step 2: Type-check**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/actions/sanction.ts
+git commit -m "feat: sanction script submits batched EAS attestations"
+```
+
+---
+
+### Task 20: `unsanction` action script (bulk EAS revoke)
+
+**Files:**
+- Create: `scripts/actions/unsanction.ts`
+
+Looks up the active UID per recipient via `SanctionsResolver.getDesignation`, then submits a single `multiRevoke`.  Recipients with no active designation are skipped with a warning instead of failing the whole batch.
+
+- [ ] **Step 1: Write the script**
+
+Create `scripts/actions/unsanction.ts`:
+
+```ts
+import { type Hex } from "viem";
+
+import {
+  connectViem,
+  getEASContract,
+  getResolverContract,
+  loadResolverDeployment,
+  parseAddressList,
+  requireOption,
+  resolveOption,
+  resolveWallet,
+} from "../utils/resolver.js";
+import { ZERO_BYTES32 } from "../utils/eas.js";
+
+const accountsArg = requireOption("--accounts", ["ACCOUNTS", "RESOLVER_ACCOUNTS"]);
+const fromArg = resolveOption("--from", ["FROM"]);
+
+const accounts = parseAddressList(accountsArg, "--accounts");
+
+const { viem, chainId } = await connectViem();
+const wallet = await resolveWallet(viem, fromArg);
+const deployment = await loadResolverDeployment(chainId);
+if (!deployment.schemaUID) {
+  throw new Error(
+    `No schemaUID recorded for chainId ${chainId}.  Run scripts/register-schema.ts first.`,
+  );
+}
+const resolver = await getResolverContract(viem, deployment.address, wallet);
+const eas = await getEASContract(viem, deployment.easAddress, wallet);
+
+const revocations: Array<{ uid: Hex; value: bigint }> = [];
+const skipped: string[] = [];
+for (const account of accounts) {
+  const designation = await resolver.read.getDesignation([account]);
+  if (designation.attestationUID.toLowerCase() === ZERO_BYTES32) {
+    skipped.push(account);
+    continue;
+  }
+  revocations.push({ uid: designation.attestationUID as Hex, value: 0n });
+}
+
+if (revocations.length === 0) {
+  console.log(JSON.stringify({ resolver: deployment.address, revoked: [], skipped }, null, 2));
+  process.exit(0);
+}
+
+const txHash = await eas.write.multiRevoke([
+  [
+    {
+      schema: deployment.schemaUID as Hex,
+      data: revocations,
+    },
+  ],
+]);
+
+console.log(
+  JSON.stringify(
+    {
+      resolver: deployment.address,
+      txHash,
+      revoked: revocations.map((r) => r.uid),
+      skipped,
+    },
+    null,
+    2,
+  ),
+);
+```
+
+- [ ] **Step 2: Type-check**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/actions/unsanction.ts
+git commit -m "feat: unsanction script revokes active EAS attestations per recipient"
+```
+
+---
+
+### Task 21: `check` action script
+
+**Files:**
+- Create: `scripts/actions/check.ts`
+
+- [ ] **Step 1: Write the script**
+
+Create `scripts/actions/check.ts`:
+
+```ts
+import {
+  connectViem,
+  getResolverContract,
+  loadResolverDeployment,
+  parseAddressList,
+  requireOption,
+  resolveOption,
+  resolveWallet,
+} from "../utils/resolver.js";
+
+const accountsArg = requireOption("--accounts", ["ACCOUNTS", "RESOLVER_ACCOUNTS"]);
+const fromArg = resolveOption("--from", ["FROM"]);
+
+const accounts = parseAddressList(accountsArg, "--accounts");
+
+const { viem, chainId } = await connectViem();
+const wallet = await resolveWallet(viem, fromArg);
+const deployment = await loadResolverDeployment(chainId);
+const resolver = await getResolverContract(viem, deployment.address, wallet);
+
+const sanctioned = await resolver.read.isSanctionedBatch([accounts]);
+const designations = await Promise.all(
+  accounts.map((account) => resolver.read.getDesignation([account])),
+);
+
+const result = accounts.map((account, i) => ({
+  account,
+  sanctioned: sanctioned[i],
+  attestationUID: designations[i].attestationUID,
+  attester: designations[i].attester,
+  attestedAt: designations[i].attestedAt.toString(),
+}));
+
+console.log(JSON.stringify({ resolver: deployment.address, entries: result }, null, 2));
+```
+
+- [ ] **Step 2: Type-check**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/actions/check.ts
+git commit -m "feat: check script reads isSanctioned + designation per address"
+```
+
+---
+
+### Task 22: Rewire `transfer-ownership.ts` for the new contract
+
+**Files:**
+- Modify: `scripts/actions/transfer-ownership.ts`
+
+- [ ] **Step 1: Replace the script body**
+
+Replace the contents of `scripts/actions/transfer-ownership.ts`:
+
+```ts
+import {
+  connectViem,
+  getResolverContract,
+  loadResolverDeployment,
+  logSuccess,
+  requireOption,
+  resolveOption,
+  resolveWallet,
+} from "../utils/resolver.js";
+
+const newOwner = requireOption("--new-owner", ["NEW_OWNER", "RESOLVER_NEW_OWNER"]);
+const fromArg = resolveOption("--from", ["FROM"]);
+
+const { viem, chainId } = await connectViem();
+const wallet = await resolveWallet(viem, fromArg);
+const deployment = await loadResolverDeployment(chainId);
+const resolver = await getResolverContract(viem, deployment.address, wallet);
+
+await resolver.write.transferOwnership([newOwner as `0x${string}`]);
+logSuccess("Transferred ownership", { resolver: deployment.address, newOwner });
+```
+
+- [ ] **Step 2: Type-check**
+
+Run:
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: zero errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/actions/transfer-ownership.ts
+git commit -m "refactor: transfer-ownership script targets SanctionsResolver"
+```
+
+---
+
+### Task 23: Update `package.json` scripts
+
+**Files:**
+- Modify: `package.json` (replace `registry:*` script entries; repoint `deploy` to `mainnet`)
+
+- [ ] **Step 1: Replace the `scripts` block**
+
+Replace the `scripts` field in `package.json` with:
+
+```json
+"scripts": {
+  "test": "npx hardhat test",
+  "deploy": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy.ts --network mainnet",
+  "register-schema": "op run --env-file=.env.ref -- hardhat run scripts/register-schema.ts --network mainnet",
+  "registry:trust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/trust-attester.ts --network mainnet",
+  "registry:untrust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/untrust-attester.ts --network mainnet",
+  "registry:list-trusted-attesters": "op run --env-file=.env.ref -- hardhat run scripts/actions/list-trusted-attesters.ts --network mainnet",
+  "registry:sanction": "op run --env-file=.env.ref -- hardhat run scripts/actions/sanction.ts --network mainnet",
+  "registry:unsanction": "op run --env-file=.env.ref -- hardhat run scripts/actions/unsanction.ts --network mainnet",
+  "registry:check": "op run --env-file=.env.ref -- hardhat run scripts/actions/check.ts --network mainnet",
+  "registry:transfer-owner": "op run --env-file=.env.ref -- hardhat run scripts/actions/transfer-ownership.ts --network mainnet"
+},
+```
+
+(All scripts hard-pin `--network mainnet` to match the spec's mainnet-only deploy story.  Operators targeting another network should invoke `npx hardhat run scripts/actions/<name>.ts --network <other>` directly.)
+
+- [ ] **Step 2: Verify package.json parses**
+
+Run:
+
+```bash
+node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))" && echo OK
+```
+
+Expected: `OK`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add package.json
+git commit -m "feat: replace registry scripts with sanctions resolver scripts"
+```
+
+---
+
+### Task 24: Rewrite `README.md`
+
+**Files:**
+- Modify: `README.md`
+
+- [ ] **Step 1: Replace the README**
+
+Overwrite `README.md` with:
+
+````markdown
+# Sanctions Resolver
+
+EAS-backed sanctions resolver.  This contract extends EAS `SchemaResolver` to mirror
+the active sanctioning attestation per address, and exposes a Chainalysis-compatible
+`isSanctioned(address)` interface.
+
+EAS is the canonical data layer.  Every sanction is an attestation against a
+registered schema; every revocation flows through EAS.  The on-chain mirror stores
+just enough (`attestationUID`, `attester`, `attestedAt`) to answer the binary check
+in one SLOAD.  Rich metadata (source, evidenceURI, designatedAt) lives in EAS and
+is reachable via the UID returned from `getDesignation`.
+
+Built with Hardhat 3, Solidity 0.8.28, OpenZeppelin Contracts v5, and Viem.
+
+## Setup
+
+This project uses [1Password CLI](https://developer.1password.com/docs/cli) for
+secure credential management.  The `.env.ref` file contains references to 1Password
+secrets.
+
+Required environment variables:
+
+- `RPC_URL`: Ethereum mainnet RPC endpoint
+- `PRIVATE_KEY`: Deployer / owner / attester key
+
+Use `op run --env-file=.env.ref --` to inject referenced credentials at runtime.
+The package scripts are wired up to do this for you.
+
+## Initial deployment flow
+
+```shell
+# 1. Deploy the resolver (writes deployments.json)
+INITIAL_ATTESTER=0x... npm run deploy
+
+# 2. Register the schema against EAS, persists schemaUID alongside the deployment
+npm run register-schema
+```
+
+After `register-schema`, `deployments.json` carries `address`, `easAddress`, and
+`schemaUID` for the deployed network.  Action scripts read these automatically.
+
+## Resolver management
+
+Action scripts accept arguments via CLI flags or environment variables.
+
+```shell
+# Allowlist management (owner only)
+RESOLVER_ACCOUNTS=0xAttester1,0xAttester2 npm run registry:trust-attester
+RESOLVER_ACCOUNTS=0xAttester1            npm run registry:untrust-attester
+
+# Inspect allowlist (event-derived)
+npm run registry:list-trusted-attesters
+
+# Sanction (bulk EAS attest from JSON file)
+INPUT=./sanctions-batch.json npm run registry:sanction
+
+# Unsanction (revokes active EAS attestation per recipient)
+RESOLVER_ACCOUNTS=0xAddr1,0xAddr2 npm run registry:unsanction
+
+# Read sanctioned status + active designation
+RESOLVER_ACCOUNTS=0xAddr1,0xAddr2 npm run registry:check
+
+# Transfer resolver ownership
+RESOLVER_NEW_OWNER=0xNewOwner npm run registry:transfer-owner
+```
+
+### Sanction batch input format
+
+`registry:sanction` accepts a JSON array.  Each entry maps to one EAS attestation:
+
+```json
+[
+  {
+    "address": "0xRecipient",
+    "source": "OFAC_SDN",
+    "sourceUID": "12345",
+    "category": "INDIVIDUAL",
+    "evidenceURI": "ipfs://Qm...",
+    "designatedAt": 1700000000
+  }
+]
+```
+
+All entries are submitted in a single `EAS.multiAttest` call.  The script prints
+the resulting `(recipient, uid)` pairs.
+
+### Environment variables
+
+| Variable               | Description                                        | Used by                |
+| ---------------------- | -------------------------------------------------- | ---------------------- |
+| `INITIAL_ATTESTER`     | Initial trusted attester address                   | `deploy`               |
+| `EAS`                  | Override the EAS contract address (testnets only)  | `deploy`               |
+| `RESOLVER_ACCOUNTS`    | Comma-separated addresses                          | most action scripts    |
+| `RESOLVER_NEW_OWNER`   | New resolver owner                                 | `registry:transfer-owner` |
+| `RESOLVER_INPUT`       | Path to a sanctions JSON batch                     | `registry:sanction`    |
+| `FROM`                 | Signer address (defaults to first account)         | optional               |
+
+## Read interface
+
+The resolver exposes:
+
+| Function                                    | Purpose                              |
+| ------------------------------------------- | ------------------------------------ |
+| `isSanctioned(address) returns (bool)`      | Chainalysis-compatible single check  |
+| `isSanctionedBatch(address[]) returns (bool[])` | Batch check (one bool per input) |
+| `getDesignation(address) returns (Designation)` | Active UID, attester, timestamp |
+| `trustedAttesters(address) returns (bool)`  | Allowlist membership                 |
+| `owner() returns (address)`                 | OZ Ownable                           |
+
+`isSanctionedBatch` is exposed under a distinct Solidity name (rather than as an
+overload of `isSanctioned(address[])`) so client tooling that maps overload sets
+to a single function name (e.g. viem) can invoke each variant unambiguously.
+
+## Testing
+
+```shell
+npm test
+```
+
+Tests deploy a fresh EAS + SchemaRegistry pair, register the sanctions schema with
+the resolver, and exercise `onAttest` / `onRevoke` end-to-end.
+````
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add README.md
+git commit -m "docs: rewrite README for SanctionsResolver"
+```
+
+---
+
+### Task 25: Refresh `CLAUDE.md`
+
+**Files:**
+- Modify: `CLAUDE.md`
+
+The current CLAUDE.md describes the legacy `AddressRegistry`.  Update the contract-architecture, invariants, network, and testing sections to match the new code.  Preserve the Hardhat 3, ESM gotcha, argument-resolution, and writing-style sections (still accurate).
+
+- [ ] **Step 1: Replace the contract architecture and networks sections**
+
+Edit `CLAUDE.md`:
+
+Replace the "Contract architecture" section with:
+
+```markdown
+## Contract architecture
+
+Single contract: `contracts/SanctionsResolver.sol`.  It extends EAS `SchemaResolver`
+(from `@ethereum-attestation-service/eas-contracts`) and OpenZeppelin `Ownable`.
+`Ownable` governs only the `trustedAttesters` allowlist; the resolver has no direct
+setters for sanctions state.  Mutations flow exclusively through EAS:
+
+- `onAttest` is called by EAS on every new attestation.  If the attester is in the
+  allowlist, the resolver records the latest `Designation { uid, attester, time }`
+  for the recipient and emits `Sanctioned`.  If the attester is not allowlisted,
+  `onAttest` returns `false` and EAS reverts the attestation.
+- `onRevoke` is called by EAS on revocation.  The resolver only clears its mirror
+  if the revoked UID matches the currently active one; revocations of stale
+  (superseded) attestations are silent no-ops.  This is the "last-attestation-wins
+  per recipient" invariant.
+
+Read interface:
+
+- `isSanctioned(address) returns (bool)` (Chainalysis-compatible).
+- `isSanctionedBatch(address[]) returns (bool[])` (named explicitly rather than
+  overloaded so viem-style clients can call each variant unambiguously).
+- `getDesignation(address) returns (Designation)`: the active UID + attester +
+  attestedAt; consumers fetch rich metadata (source, evidenceURI, etc.) from EAS
+  using the UID.
+
+Invariants worth preserving on any change:
+
+- `onRevoke` must remain a no-op when the revoked UID is not the active one.
+  Tests in `test/sanctions-resolver.test.ts` rely on this for the
+  re-attestation-then-stale-revoke flow.
+- `onAttest` must reject untrusted attesters with `return false` (which causes
+  EAS to revert the whole attestation).  Do not silently accept and skip the
+  state update.
+- Ownership transfers do **not** need `_transferOwnership` overrides.  The
+  legacy `AddressRegistry` overrode it to keep `UPDATER_ROLE` in sync; the new
+  contract has no analogous role state, so plain OZ `Ownable` semantics apply.
+
+The schema string (registered against EAS SchemaRegistry on mainnet) is:
+`string source,string sourceUID,string category,string evidenceURI,uint64 designatedAt`,
+revocable, with the resolver as the schema's resolver.
+```
+
+Replace the "Networks and deployments" section with:
+
+```markdown
+## Networks and deployments
+
+`hardhat.config.ts` defines a live `mainnet` network (Ethereum, `chainType: "l1"`),
+the legacy `shape` network (Shape L2, chainId 360, kept so legacy AddressRegistry
+deployments remain reachable), plus simulated `hardhatMainnet` and `hardhatOp`.
+`npm run deploy` and every `registry:*` script target `mainnet` by default; pass
+`--network <other>` to `npx hardhat run` to target another configured network.
+
+Deployments are recorded to `deployments.json`, keyed by chain ID then contract
+name.  The new resolver deployment record carries `address`, `deployer`, `owner`,
+`initialAttester`, `easAddress`, `deployedAt`, and (after running
+`scripts/register-schema.ts`) `schemaUID`.  EAS contract addresses per chain
+live in `scripts/utils/eas.ts`; add an entry to `EAS_ADDRESSES` to support a
+new chain.
+```
+
+Replace the "Testing" section with:
+
+```markdown
+## Testing
+
+Tests use the Node built-in test runner (`node:test`) with `assert/strict`.  Each
+test deploys a fresh EAS + SchemaRegistry pair (via the helpers in
+`test/helpers/eas.ts`), then deploys `SanctionsResolver` and registers the schema
+with it.  Wallet clients are pulled once in a top-level `before` hook.  When
+asserting reverts, use the `expectRevert` helper from `test/helpers/eas.ts`:
+viem nests revert reasons through several `cause` layers, and the helper
+flattens them before matching.
+
+`contracts/test-helpers/EASImports.sol` exists solely to drag the EAS and
+SchemaRegistry source into Hardhat's compilation set; it is never deployed in
+production.
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add CLAUDE.md
+git commit -m "docs: refresh CLAUDE.md for SanctionsResolver"
+```
+
+---
+
+### Task 26: Delete the legacy code
+
+**Files:**
+- Delete: `contracts/AddressRegistry.sol`
+- Delete: `test/address-registry.test.ts`
+- Delete: `scripts/utils/registry.ts`
+- Delete: `scripts/args/address-registry.js`
+- Delete: `scripts/actions/add-updaters.ts`
+- Delete: `scripts/actions/remove-updaters.ts`
+- Delete: `scripts/actions/list-updaters.ts`
+- Delete: `scripts/actions/set-registry-values.ts`
+- Delete: `scripts/actions/clear-registry-values.ts`
+- Delete: `scripts/actions/update-registry.ts`
+- Delete: `scripts/actions/get-values.ts`
+
+The `scripts/args/` directory is removed entirely once `address-registry.js` is gone (no other contents).
+
+- [ ] **Step 1: Remove the files**
+
+Run:
+
+```bash
+rm contracts/AddressRegistry.sol
+rm test/address-registry.test.ts
+rm scripts/utils/registry.ts
+rm scripts/args/address-registry.js
+rmdir scripts/args
+rm scripts/actions/add-updaters.ts
+rm scripts/actions/remove-updaters.ts
+rm scripts/actions/list-updaters.ts
+rm scripts/actions/set-registry-values.ts
+rm scripts/actions/clear-registry-values.ts
+rm scripts/actions/update-registry.ts
+rm scripts/actions/get-values.ts
+```
+
+- [ ] **Step 2: Verify nothing still references the legacy modules**
+
+Run:
+
+```bash
+grep -RIn "AddressRegistry\|utils/registry\|UPDATER_ROLE\|registryValues" contracts/ test/ scripts/ || echo "no references"
+```
+
+Expected: `no references`.  If any matches surface, they are leftover imports in code that survived the cleanup; fix them by either updating to the new resolver or removing the reference.
+
+- [ ] **Step 3: Compile + run the full test suite to confirm green**
+
+Run:
+
+```bash
+npx hardhat compile
+npm test
+```
+
+Expected: compile succeeds, all SanctionsResolver tests pass, no remaining AddressRegistry tests in the suite.
+
+- [ ] **Step 4: Commit the deletions**
+
+```bash
+git add -A contracts/ test/ scripts/
+git commit -m "chore: remove legacy AddressRegistry contract, tests, and scripts"
+```
+
+---
+
+## Done criteria
+
+- `npm test` is green and exercises constructor, allowlist management, ownership transfer, `onAttest` (trusted + untrusted), `onRevoke` (active + stale), `isSanctioned` single + batch, `getDesignation`, last-write semantics, and the multi-attester case.
+- `npx hardhat compile` succeeds with EAS sources compiled in (via `contracts/test-helpers/EASImports.sol`).
+- `npx tsc --noEmit` passes for all scripts.
+- `scripts/deploy.ts` deploys to `mainnet` and writes a `SanctionsResolver` entry to `deployments.json`.
+- `scripts/register-schema.ts` registers the schema against EAS SchemaRegistry and writes `schemaUID` to the deployment record.
+- All seven action scripts run end-to-end (compile + parse env vars + load deployment).
+- `package.json` scripts only reference scripts that exist.
+- `README.md` and `CLAUDE.md` describe the new contract.
+- The legacy `AddressRegistry` and its scripts no longer exist in the tree.
+
+## Spec coverage check
+
+| Spec requirement | Task |
+|---|---|
+| Replace generic uint8 score with sanctions-specific interface | Tasks 5-11 |
+| `mapping(address => Designation)` with `attestationUID, attester, attestedAt` | Task 5, 7 |
+| Sanctioned status by attestation presence (no boolean field) | Tasks 7, 9, 10 |
+| `Ownable` retained for managing trusted-attester set only | Tasks 5, 6, 11 |
+| `mapping(address => bool) trustedAttesters` replaces `UPDATER_ROLE` | Tasks 5, 6 |
+| `onAttest` and `onRevoke` are the only mutation paths | Tasks 7, 8, 26 (deletion of legacy direct-setter scripts) |
+| `isSanctioned(address)` Chainalysis-compatible | Task 10 |
+| `isSanctioned(address[])` batch read (delivered as `isSanctionedBatch`) | Task 10 |
+| `getDesignation(address)` | Task 7 |
+| Schema string with five fields | Tasks 4 (test helper), 12 (script helper), 15 (registration) |
+| Schema is `revocable: true` | Tasks 4, 15 |
+| `event AttesterTrusted`, `Sanctioned`, `Unsanctioned` | Tasks 5, 6, 7, 8 |
+| Constructor takes EAS + initialAttester (allows zero) | Task 5 |
+| `setAttesterTrust(address, bool) onlyOwner` | Task 6 |
+| Last-attestation-wins per recipient | Task 9 |
+| Stale revocations are no-ops | Tasks 8 (impl), 9 (test) |
+| Single chain (Ethereum mainnet) deploy story | Tasks 2, 12, 14, 23 |
+| Schema registration recorded in `deployments.json` | Task 15 |
+| Migration from old contract: `registry:add-updaters` → `registry:trust-attester` etc. | Tasks 16-22, 23 |
+| Sanction script uses EAS attest; needs schemaUID | Task 19 |
+| Unsanction script revokes by UID; can resolve UID via `getDesignation` | Task 20 |
+| Old AddressRegistry deployments untouched on-chain (just frozen via existing tooling pre-migration) | Out of scope for code changes; spec note in README/CLAUDE.md |
+| EAS canonical, resolver mirror compact | Tasks 5, 7, 10 |
+| Multi-attester future-compatible (last-write across attesters) | Task 9 |
+| Non-upgradeable | No proxy code introduced (Tasks 5-11) |
+| No direct setters for sanction state | Task 26 (legacy direct setters deleted; new contract has none) |
+
+---
+
+## Execution
+
+**Plan complete and saved to `docs/superpowers/plans/2026-04-30-eas-sanctions-resolver-migration.md`.**
+
+Two execution options:
+
+1. **Subagent-Driven (recommended)**: I dispatch a fresh subagent per task, review between tasks, fast iteration.
+2. **Inline Execution**: Execute tasks in this session using executing-plans, batch execution with checkpoints.
+
+Which approach?
