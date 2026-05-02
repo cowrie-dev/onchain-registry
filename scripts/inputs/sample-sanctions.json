@@ -4,7 +4,9 @@
     "source": "TEST",
     "sourceUID": "TEST-0001",
     "category": "test",
-    "evidenceURI": "ipfs://test/0001",
+    "sourceUrl": "ipfs://test/manifest",
+    "sourceSha256": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "sourcePublishedAt": 1746057600,
     "designatedAt": 1746057600
   },
   {
@@ -12,7 +14,9 @@
     "source": "TEST",
     "sourceUID": "TEST-0002",
     "category": "test",
-    "evidenceURI": "ipfs://test/0002",
+    "sourceUrl": "ipfs://test/manifest",
+    "sourceSha256": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "sourcePublishedAt": 1746057600,
     "designatedAt": 1746057600
   },
   {
@@ -20,7 +24,9 @@
     "source": "TEST",
     "sourceUID": "TEST-0003",
     "category": "test",
-    "evidenceURI": "ipfs://test/0003",
+    "sourceUrl": "ipfs://test/manifest",
+    "sourceSha256": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "sourcePublishedAt": 1746057600,
     "designatedAt": 1746057600
   },
   {
@@ -28,7 +34,9 @@
     "source": "TEST",
     "sourceUID": "TEST-DEAD",
     "category": "test",
-    "evidenceURI": "ipfs://test/dead",
+    "sourceUrl": "ipfs://test/manifest",
+    "sourceSha256": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "sourcePublishedAt": 1746057600,
     "designatedAt": 1746057600
   }
 ]

@@ -4,6 +4,7 @@ import { network } from "hardhat";
 import type { ContractReturnType, WalletClient } from "@nomicfoundation/hardhat-viem/types";
 import {
   ZERO_ADDRESS,
+  ZERO_BYTES32,
   deployEAS,
   expectRevert,
   registerSchema,
@@ -125,7 +126,7 @@ describe("SanctionsResolver: onAttest", () => {
         source: "OFAC_SDN",
         sourceUID: "1234",
         category: "INDIVIDUAL",
-        evidenceURI: "ipfs://evidence",
+        sourceUrl: "ipfs://evidence", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n,
         designatedAt: 1700000000n,
       },
     });
@@ -151,7 +152,7 @@ describe("SanctionsResolver: onAttest", () => {
           source: "X",
           sourceUID: "Y",
           category: "Z",
-          evidenceURI: "",
+          sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n,
           designatedAt: 0n,
         },
       }),
@@ -176,7 +177,7 @@ describe("SanctionsResolver: onAttest", () => {
         source: "OFAC_SDN",
         sourceUID: "9",
         category: "INDIVIDUAL",
-        evidenceURI: "",
+        sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n,
         designatedAt: 1n,
       },
     });
@@ -203,7 +204,7 @@ describe("SanctionsResolver: onRevoke", () => {
         source: "S",
         sourceUID: "U",
         category: "C",
-        evidenceURI: "",
+        sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n,
         designatedAt: 0n,
       },
     });
@@ -239,13 +240,13 @@ describe("SanctionsResolver: re-attestation", () => {
       eas: attesterEAS,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+      data: { source: "A", sourceUID: "1", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 1n },
     });
     const uidB = await attest({
       eas: attesterEAS,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+      data: { source: "B", sourceUID: "2", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 2n },
     });
 
     assert.notEqual(uidA.toLowerCase(), uidB.toLowerCase());
@@ -263,13 +264,13 @@ describe("SanctionsResolver: re-attestation", () => {
       eas: attesterEAS,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+      data: { source: "A", sourceUID: "1", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 1n },
     });
     const uidB = await attest({
       eas: attesterEAS,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+      data: { source: "B", sourceUID: "2", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 2n },
     });
 
     // revoke the stale one
@@ -292,13 +293,13 @@ describe("SanctionsResolver: re-attestation", () => {
       eas: easA,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+      data: { source: "A", sourceUID: "1", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 1n },
     });
     const uidB = await attest({
       eas: easB,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+      data: { source: "B", sourceUID: "2", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 2n },
     });
 
     const designation = await resolver.read.getDesignation([recipient.account.address]);
@@ -320,7 +321,7 @@ describe("SanctionsResolver: isSanctioned", () => {
       eas: easA,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "S", sourceUID: "U", category: "C", evidenceURI: "", designatedAt: 0n },
+      data: { source: "S", sourceUID: "U", category: "C", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 0n },
     });
     assert.equal(await resolver.read.isSanctioned([recipient.account.address]), true);
   });
@@ -332,7 +333,7 @@ describe("SanctionsResolver: isSanctioned", () => {
       eas: easA,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "S", sourceUID: "U", category: "C", evidenceURI: "", designatedAt: 0n },
+      data: { source: "S", sourceUID: "U", category: "C", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 0n },
     });
 
     const out = await resolver.read.isSanctionedBatch([
@@ -348,7 +349,7 @@ describe("SanctionsResolver: isSanctioned", () => {
       eas: easA,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "S", sourceUID: "U", category: "C", evidenceURI: "", designatedAt: 0n },
+      data: { source: "S", sourceUID: "U", category: "C", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 0n },
     });
     await revoke(easA, schemaUID, uid);
     assert.equal(await resolver.read.isSanctioned([recipient.account.address]), false);
@@ -408,13 +409,13 @@ describe("SanctionsResolver: enumerable sanctioned set", () => {
       eas: easA,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "S", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+      data: { source: "S", sourceUID: "1", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 1n },
     });
     await attest({
       eas: easA,
       schemaUID,
       recipient: secondRecipient.account.address,
-      data: { source: "S", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+      data: { source: "S", sourceUID: "2", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 2n },
     });
 
     assert.equal(await resolver.read.sanctionedCount(), 2n);
@@ -440,13 +441,13 @@ describe("SanctionsResolver: enumerable sanctioned set", () => {
       eas: easA,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+      data: { source: "A", sourceUID: "1", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 1n },
     });
     await attest({
       eas: easA,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+      data: { source: "B", sourceUID: "2", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 2n },
     });
 
     assert.equal(await resolver.read.sanctionedCount(), 1n);
@@ -464,13 +465,13 @@ describe("SanctionsResolver: enumerable sanctioned set", () => {
       eas: easA,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+      data: { source: "A", sourceUID: "1", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 1n },
     });
     await attest({
       eas: easA,
       schemaUID,
       recipient: recipient.account.address,
-      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+      data: { source: "B", sourceUID: "2", category: "I", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 2n },
     });
 
     // Revoke the stale UID; resolver should keep the recipient in the set
@@ -495,7 +496,7 @@ describe("SanctionsResolver: enumerable sanctioned set", () => {
           source: "S",
           sourceUID: String(i),
           category: "I",
-          evidenceURI: "",
+          sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n,
           designatedAt: BigInt(i + 1),
         },
       });
@@ -548,7 +549,7 @@ describe("SanctionsResolver: enumerable sanctioned set", () => {
         eas: strangerEAS,
         schemaUID,
         recipient: recipient.account.address,
-        data: { source: "X", sourceUID: "Y", category: "Z", evidenceURI: "", designatedAt: 0n },
+        data: { source: "X", sourceUID: "Y", category: "Z", sourceUrl: "", sourceSha256: ZERO_BYTES32, sourcePublishedAt: 0n, designatedAt: 0n },
       }),
       "InvalidAttestation",
     );
