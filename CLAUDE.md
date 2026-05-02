@@ -53,15 +53,27 @@ Read interface:
 - `getDesignation(address) returns (Designation)`: the active UID + attester +
   attestedAt; consumers fetch rich metadata (source, evidenceURI, etc.) from EAS
   using the UID.
+- `sanctionedCount() returns (uint256)` and `sanctionedAddresses() returns (address[])`:
+  full enumerable set of currently-sanctioned recipients, mirrored alongside
+  `_designations` via OZ `EnumerableSet.AddressSet`.  Cheap enough to pull in one
+  call at OFAC scale; paginate via `sanctionedRange(offset, limit)` if the set ever
+  outgrows the eth_call cap.  Insertion order is NOT stable across removals
+  (swap-and-pop), so reconcilers should prefer pulling the whole set per run.
 
 Invariants worth preserving on any change:
 
 - `onRevoke` must remain a no-op when the revoked UID is not the active one.
   Tests in `test/sanctions-resolver.test.ts` rely on this for the
-  re-attestation-then-stale-revoke flow.
+  re-attestation-then-stale-revoke flow.  Both `_designations` and `_sanctioned`
+  must be left untouched in that case (the stale-revoke set-no-op test pins this).
 - `onAttest` must reject untrusted attesters with `return false` (which causes
   EAS to revert the whole attestation).  Do not silently accept and skip the
   state update.
+- `_designations` and `_sanctioned` must stay in lockstep: every key with a
+  non-zero `attestationUID` must be in the set, and every set member must have
+  a non-zero `attestationUID`.  `EnumerableSet.add` and `.remove` are idempotent,
+  which is what makes re-attestation and stale-revoke safe; do not replace them
+  with manual mapping bookkeeping that would break that invariant.
 - Ownership transfers do **not** need `_transferOwnership` overrides.  The
   legacy `AddressRegistry` overrode it to keep `UPDATER_ROLE` in sync; the new
   contract has no analogous role state, so plain OZ `Ownable` semantics apply.
