@@ -24,6 +24,7 @@
     "registry:sanction": "op run --env-file=.env.ref -- hardhat run scripts/actions/sanction.ts --network mainnet",
     "registry:unsanction": "op run --env-file=.env.ref -- hardhat run scripts/actions/unsanction.ts --network mainnet",
     "registry:check": "op run --env-file=.env.ref -- hardhat run scripts/actions/check.ts --network mainnet",
+    "registry:list-sanctioned": "op run --env-file=.env.ref -- hardhat run scripts/actions/list-sanctioned.ts --network mainnet",
     "registry:transfer-owner": "op run --env-file=.env.ref -- hardhat run scripts/actions/transfer-ownership.ts --network mainnet"
   },
   "devDependencies": {
