@@ -525,6 +525,17 @@ describe("SanctionsResolver: enumerable sanctioned set", () => {
     // offset == total → empty
     const edge = await resolver.read.sanctionedRange([4n, 5n]);
     assert.equal(edge.length, 0);
+
+    // Sentinel-large limit must clamp, not revert on checked arithmetic
+    // overflow (offset + limit would overflow under the naive impl).
+    const MAX_UINT256 = (1n << 256n) - 1n;
+    const sentinelTail = await resolver.read.sanctionedRange([2n, MAX_UINT256]);
+    assert.equal(sentinelTail.length, 2);
+    const sentinelFromZero = await resolver.read.sanctionedRange([0n, MAX_UINT256]);
+    assert.equal(sentinelFromZero.length, 4);
+    // And the same sentinel past the end still returns empty cleanly.
+    const sentinelPastEnd = await resolver.read.sanctionedRange([10n, MAX_UINT256]);
+    assert.equal(sentinelPastEnd.length, 0);
   });
 
   it("untrusted attestations do not enter the set", async () => {

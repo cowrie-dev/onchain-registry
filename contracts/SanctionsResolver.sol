@@ -88,8 +88,10 @@ contract SanctionsResolver is SchemaResolver, Ownable {
     }
 
     /// @notice Paginated walk over the sanctioned set.
-    /// @param offset Starting index (clamped to length).
-    /// @param limit  Max addresses to return (the slice is clamped to length).
+    /// @param offset Starting index (offsets >= length return an empty array).
+    /// @param limit  Max addresses to return (clamped to remaining length; large sentinel
+    ///               values like type(uint256).max are explicitly supported as "return
+    ///               everything from offset onward").
     /// @dev    Indices are NOT stable across mutations.  Reconcilers that walk the set in
     ///         pages must accept that an entry visible on page N may have moved to page M
     ///         between calls.  Pulling the whole set with {sanctionedAddresses} is simpler.
@@ -102,13 +104,14 @@ contract SanctionsResolver is SchemaResolver, Ownable {
         if (offset >= total) {
             return new address[](0);
         }
-        uint256 end = offset + limit;
-        if (end > total) {
-            end = total;
-        }
-        out = new address[](end - offset);
-        for (uint256 i = offset; i < end; i++) {
-            out[i - offset] = _sanctioned.at(i);
+        // Compute the slice without `offset + limit`, which would revert on checked
+        // overflow when limit is a large sentinel (e.g. type(uint256).max).
+        uint256 available = total - offset;            // safe: offset < total
+        uint256 count = limit < available ? limit : available;
+        out = new address[](count);
+        for (uint256 i = 0; i < count; i++) {
+            // offset + i < offset + count <= total, so no overflow risk here either.
+            out[i] = _sanctioned.at(offset + i);
         }
     }
 
