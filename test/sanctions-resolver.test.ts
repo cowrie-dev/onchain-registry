@@ -387,3 +387,171 @@ describe("SanctionsResolver: ownership", () => {
     assert.equal(await resolver.read.trustedAttesters([attester.account.address]), true);
   });
 });
+
+describe("SanctionsResolver: enumerable sanctioned set", () => {
+  function normalize(addrs: readonly string[]): string[] {
+    return [...addrs].map((a) => a.toLowerCase()).sort();
+  }
+
+  it("starts empty", async () => {
+    const { resolver } = await deployResolver(attester.account.address);
+    assert.equal(await resolver.read.sanctionedCount(), 0n);
+    const list = await resolver.read.sanctionedAddresses();
+    assert.equal(list.length, 0);
+  });
+
+  it("attestations append, revocations remove, count tracks both", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+
+    const uidA = await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "S", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+    });
+    await attest({
+      eas: easA,
+      schemaUID,
+      recipient: secondRecipient.account.address,
+      data: { source: "S", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+    });
+
+    assert.equal(await resolver.read.sanctionedCount(), 2n);
+    assert.deepEqual(
+      normalize(await resolver.read.sanctionedAddresses()),
+      normalize([recipient.account.address, secondRecipient.account.address]),
+    );
+
+    await revoke(easA, schemaUID, uidA);
+
+    assert.equal(await resolver.read.sanctionedCount(), 1n);
+    assert.deepEqual(
+      normalize(await resolver.read.sanctionedAddresses()),
+      normalize([secondRecipient.account.address]),
+    );
+  });
+
+  it("re-attesting an already-sanctioned recipient does not double-count", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+
+    await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+    });
+    await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+    });
+
+    assert.equal(await resolver.read.sanctionedCount(), 1n);
+    assert.deepEqual(
+      normalize(await resolver.read.sanctionedAddresses()),
+      normalize([recipient.account.address]),
+    );
+  });
+
+  it("revoking a stale (superseded) UID does not remove the recipient from the set", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+
+    const uidA = await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "A", sourceUID: "1", category: "I", evidenceURI: "", designatedAt: 1n },
+    });
+    await attest({
+      eas: easA,
+      schemaUID,
+      recipient: recipient.account.address,
+      data: { source: "B", sourceUID: "2", category: "I", evidenceURI: "", designatedAt: 2n },
+    });
+
+    // Revoke the stale UID; resolver should keep the recipient in the set
+    // because the active UID is still B, and onRevoke is a no-op for stale UIDs.
+    await revoke(easA, schemaUID, uidA);
+
+    assert.equal(await resolver.read.sanctionedCount(), 1n);
+    assert.equal(await resolver.read.isSanctioned([recipient.account.address]), true);
+  });
+
+  it("sanctionedRange paginates and clamps at the boundaries", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const easA = await viem.getContractAt("EAS", eas.address, { client: { wallet: attester } });
+
+    const targets = [recipient, secondRecipient, stranger, newOwner];
+    for (let i = 0; i < targets.length; i++) {
+      await attest({
+        eas: easA,
+        schemaUID,
+        recipient: targets[i].account.address,
+        data: {
+          source: "S",
+          sourceUID: String(i),
+          category: "I",
+          evidenceURI: "",
+          designatedAt: BigInt(i + 1),
+        },
+      });
+    }
+    assert.equal(await resolver.read.sanctionedCount(), 4n);
+
+    // First page
+    const page0 = await resolver.read.sanctionedRange([0n, 2n]);
+    assert.equal(page0.length, 2);
+    // Second page
+    const page1 = await resolver.read.sanctionedRange([2n, 2n]);
+    assert.equal(page1.length, 2);
+    // Concatenated == full set
+    assert.deepEqual(
+      normalize([...page0, ...page1]),
+      normalize(targets.map((t) => t.account.address)),
+    );
+
+    // limit overruns total → clamps
+    const tail = await resolver.read.sanctionedRange([3n, 100n]);
+    assert.equal(tail.length, 1);
+
+    // offset >= total → empty
+    const off = await resolver.read.sanctionedRange([10n, 5n]);
+    assert.equal(off.length, 0);
+
+    // offset == total → empty
+    const edge = await resolver.read.sanctionedRange([4n, 5n]);
+    assert.equal(edge.length, 0);
+
+    // Sentinel-large limit must clamp, not revert on checked arithmetic
+    // overflow (offset + limit would overflow under the naive impl).
+    const MAX_UINT256 = (1n << 256n) - 1n;
+    const sentinelTail = await resolver.read.sanctionedRange([2n, MAX_UINT256]);
+    assert.equal(sentinelTail.length, 2);
+    const sentinelFromZero = await resolver.read.sanctionedRange([0n, MAX_UINT256]);
+    assert.equal(sentinelFromZero.length, 4);
+    // And the same sentinel past the end still returns empty cleanly.
+    const sentinelPastEnd = await resolver.read.sanctionedRange([10n, MAX_UINT256]);
+    assert.equal(sentinelPastEnd.length, 0);
+  });
+
+  it("untrusted attestations do not enter the set", async () => {
+    const { resolver, eas, schemaUID } = await deployResolver(attester.account.address);
+    const strangerEAS = await viem.getContractAt("EAS", eas.address, {
+      client: { wallet: secondAttester },
+    });
+    await expectRevert(
+      attest({
+        eas: strangerEAS,
+        schemaUID,
+        recipient: recipient.account.address,
+        data: { source: "X", sourceUID: "Y", category: "Z", evidenceURI: "", designatedAt: 0n },
+      }),
+      "InvalidAttestation",
+    );
+    assert.equal(await resolver.read.sanctionedCount(), 0n);
+  });
+});
