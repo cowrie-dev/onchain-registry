@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { network } from "hardhat";
-import { type Address, type Hex, getAddress, isHex } from "viem";
+import { type Address, type Hex, encodeFunctionData, getAddress, isHex } from "viem";
 
 import { getEASAddresses } from "./utils/eas.js";
 import {
@@ -22,6 +22,15 @@ async function main() {
     throw new Error(`Network ${networkName} does not define chainId in hardhat.config.ts.`);
   }
 
+  // Print-calldata mode: produce the bytes for a custody wallet to broadcast,
+  // without signing or broadcasting locally.  No wallet/key required; the
+  // deployer is derived from the salt's permissioned-sender prefix.  Accept
+  // both the bare CLI flag (--print-calldata with no value) and the env var
+  // (handy for shell loops over networks).
+  const printCalldata =
+    process.argv.includes("--print-calldata") ||
+    Boolean(process.env.PRINT_CALLDATA);
+
   const saltArg = requireOption("--salt", ["SALT"]);
   if (!isHex(saltArg) || saltArg.length !== 66) {
     throw new Error(`--salt must be 0x-prefixed 32-byte hex (66 chars), got '${saltArg}'`);
@@ -38,11 +47,20 @@ async function main() {
     ? getAddress(easOverride)
     : getEASAddresses(chainId).eas;
 
-  const [walletClient] = await viem.getWalletClients();
-  if (!walletClient) {
-    throw new Error("No wallet client available.  Configure accounts for this network.");
+  // In print-calldata mode the deployer comes from the salt itself (CreateX
+  // requires bytes[0..20) of a permissioned salt to equal msg.sender).  In
+  // broadcast mode it comes from the configured wallet.
+  let deployer: Address;
+  let walletClient: Awaited<ReturnType<typeof viem.getWalletClients>>[number] | undefined;
+  if (printCalldata) {
+    deployer = getAddress(`0x${salt.slice(2, 42)}`);
+  } else {
+    [walletClient] = await viem.getWalletClients();
+    if (!walletClient) {
+      throw new Error("No wallet client available.  Configure accounts for this network.");
+    }
+    deployer = walletClient.account.address;
   }
-  const deployer = walletClient.account.address;
 
   const initialOwnerArg = resolveOption("--initial-owner", [
     "INITIAL_OWNER",
@@ -56,7 +74,8 @@ async function main() {
 
   // Validate the salt's permissioned format: bytes[0..20) must equal deployer,
   // bytes[20] must be 0x00 (no cross-chain protection; otherwise the address
-  // would differ per chain).  Mirrors mine-create3-salt.ts's output format.
+  // would differ per chain).  Mirrors createxcrunch's permissioned-sender
+  // (no-crosschain) salt layout.
   const saltSenderHex = salt.slice(2, 42).toLowerCase();
   const expectedSenderHex = deployer.slice(2).toLowerCase();
   if (saltSenderHex !== expectedSenderHex) {
@@ -122,10 +141,13 @@ async function main() {
     );
   }
 
-  console.log("Deploying SanctionsResolver via CREATE3");
+  const header = printCalldata
+    ? "CREATE3 calldata for SanctionsResolver (no broadcast)"
+    : "Deploying SanctionsResolver via CREATE3";
+  console.log(header);
   console.log(`  network         : ${networkName} (chainId ${chainId})`);
-  console.log(`  deployer        : ${deployer}`);
-  console.log(`  CreateX         : ${createx}`);
+  console.log(`  deployer (from) : ${deployer}`);
+  console.log(`  CreateX (to)    : ${createx}`);
   console.log(`  EAS             : ${easAddress}`);
   console.log(`  initial owner   : ${initialOwner}`);
   console.log(`  initial attester: ${initialAttester}`);
@@ -133,6 +155,22 @@ async function main() {
   console.log(`  predicted addr  : ${predicted}`);
   console.log("");
 
+  if (printCalldata) {
+    const data = encodeFunctionData({
+      abi: CREATEX_DEPLOY_CREATE3_ABI,
+      functionName: "deployCreate3",
+      args: [salt, initCode],
+    });
+    console.log(`value           : 0`);
+    console.log(`calldata bytes  : ${(data.length - 2) / 2}`);
+    console.log(`calldata        :`);
+    console.log(data);
+    return;
+  }
+
+  if (!walletClient) {
+    throw new Error("internal: walletClient missing in broadcast mode");
+  }
   const txHash = await walletClient.writeContract({
     address: createx,
     abi: CREATEX_DEPLOY_CREATE3_ABI,
