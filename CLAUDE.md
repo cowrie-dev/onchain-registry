@@ -51,8 +51,8 @@ Read interface:
 - `isSanctionedBatch(address[]) returns (bool[])` (named explicitly rather than
   overloaded so viem-style clients can call each variant unambiguously).
 - `getDesignation(address) returns (Designation)`: the active UID + attester +
-  attestedAt; consumers fetch rich metadata (source, evidenceURI, etc.) from EAS
-  using the UID.
+  attestedAt; consumers fetch rich metadata (source, sourceUrl, sourceSha256,
+  designatedAt, …) from EAS using the UID.
 - `sanctionedCount() returns (uint256)` and `sanctionedAddresses() returns (address[])`:
   full enumerable set of currently-sanctioned recipients, mirrored alongside
   `_designations` via OZ `EnumerableSet.AddressSet`.  Cheap enough to pull in one
@@ -78,8 +78,8 @@ Invariants worth preserving on any change:
   legacy `AddressRegistry` overrode it to keep `UPDATER_ROLE` in sync; the new
   contract has no analogous role state, so plain OZ `Ownable` semantics apply.
 
-The schema string (registered against EAS SchemaRegistry on mainnet) is:
-`string source,string sourceUID,string category,string evidenceURI,uint64 designatedAt`,
+The schema string (registered against EAS SchemaRegistry per chain) is:
+`string source,string sourceUID,string category,string sourceUrl,bytes32 sourceSha256,uint64 sourcePublishedAt,uint64 designatedAt`,
 revocable, with the resolver as the schema's resolver.
 
 ## Networks and deployments

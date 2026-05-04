@@ -7,7 +7,7 @@ import {
 } from "viem";
 
 export const SCHEMA_STRING =
-  "string source,string sourceUID,string category,string evidenceURI,uint64 designatedAt";
+  "string source,string sourceUID,string category,string sourceUrl,bytes32 sourceSha256,uint64 sourcePublishedAt,uint64 designatedAt";
 
 /// EAS canonical contract addresses per chain.  Mainnet only at launch; extend when
 /// new deployments are added.
@@ -49,7 +49,9 @@ export type DesignationFields = {
   source: string;
   sourceUID: string;
   category: string;
-  evidenceURI: string;
+  sourceUrl: string;
+  sourceSha256: Hex;
+  sourcePublishedAt: bigint;
   designatedAt: bigint;
 };
 
@@ -59,14 +61,18 @@ export function encodeDesignation(fields: DesignationFields): Hex {
       { name: "source", type: "string" },
       { name: "sourceUID", type: "string" },
       { name: "category", type: "string" },
-      { name: "evidenceURI", type: "string" },
+      { name: "sourceUrl", type: "string" },
+      { name: "sourceSha256", type: "bytes32" },
+      { name: "sourcePublishedAt", type: "uint64" },
       { name: "designatedAt", type: "uint64" },
     ],
     [
       fields.source,
       fields.sourceUID,
       fields.category,
-      fields.evidenceURI,
+      fields.sourceUrl,
+      fields.sourceSha256,
+      fields.sourcePublishedAt,
       fields.designatedAt,
     ],
   );

@@ -18,7 +18,9 @@ type SanctionEntry = {
   source: string;
   sourceUID: string;
   category: string;
-  evidenceURI: string;
+  sourceUrl: string;
+  sourceSha256: Hex;
+  sourcePublishedAt: number | string;
   designatedAt: number | string;
 };
 
@@ -50,7 +52,9 @@ const requestData = entries.map((entry) => ({
     source: entry.source,
     sourceUID: entry.sourceUID,
     category: entry.category,
-    evidenceURI: entry.evidenceURI,
+    sourceUrl: entry.sourceUrl,
+    sourceSha256: entry.sourceSha256,
+    sourcePublishedAt: BigInt(entry.sourcePublishedAt),
     designatedAt: BigInt(entry.designatedAt),
   }),
   value: 0n,

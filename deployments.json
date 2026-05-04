@@ -22,13 +22,14 @@
   "11155111": {
     "SanctionsResolver": {
       "chainName": "sepolia",
-      "address": "0xc776cd2071f558abb2b328df8251a6aa080264e2",
+      "address": "0x0fAc944e8BB6eC862C13cE9A40bace83529F0faC",
       "deployer": "0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e",
-      "owner": "0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e",
+      "owner": "0xcC5DcD1aBDf65366DdEd3B9a59513CaB822F1c3E",
       "initialAttester": "0xcC5DcD1aBDf65366DdEd3B9a59513CaB822F1c3E",
       "easAddress": "0xC2679fBD37d54388Ce493F1DB75320D236e1815e",
-      "deployedAt": "2026-05-02T05:35:14.330Z",
-      "schemaUID": "0xcae5c24c83a314deecaf8ddc0347f6e9a690a2871e3c52b2873dfa99c661f76e"
+      "salt": "0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e0089a79773954fa40158c345",
+      "createxAddress": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+      "deployedAt": "2026-05-04T20:03:13.212Z"
     }
   }
 }

@@ -17,6 +17,8 @@
   "scripts": {
     "test": "npx hardhat test",
     "deploy": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy.ts --network mainnet",
+    "mine:create3-salt": "npx tsx scripts/mine-create3-salt.ts",
+    "deploy:create3": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy-create3.ts",
     "register-schema": "op run --env-file=.env.ref -- hardhat run scripts/register-schema.ts --network mainnet",
     "registry:trust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/trust-attester.ts --network mainnet",
     "registry:untrust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/untrust-attester.ts --network mainnet",

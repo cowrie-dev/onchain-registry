@@ -7,8 +7,8 @@ the active sanctioning attestation per address, and exposes a Chainalysis-compat
 EAS is the canonical data layer.  Every sanction is an attestation against a
 registered schema; every revocation flows through EAS.  The on-chain mirror stores
 just enough (`attestationUID`, `attester`, `attestedAt`) to answer the binary check
-in one SLOAD.  Rich metadata (source, evidenceURI, designatedAt) lives in EAS and
-is reachable via the UID returned from `getDesignation`.
+in one SLOAD.  Rich metadata (source, sourceUrl, sourceSha256, designatedAt, …)
+lives in EAS and is reachable via the UID returned from `getDesignation`.
 
 Built with Hardhat 3, Solidity 0.8.28, OpenZeppelin Contracts v5, and Viem.
 
@@ -74,7 +74,9 @@ RESOLVER_NEW_OWNER=0xNewOwner npm run registry:transfer-owner
     "source": "OFAC_SDN",
     "sourceUID": "12345",
     "category": "INDIVIDUAL",
-    "evidenceURI": "ipfs://Qm...",
+    "sourceUrl": "https://www.treasury.gov/ofac/downloads/sanctions/1.0/sdn_advanced.xml",
+    "sourceSha256": "0xdfa44de79ff009b887f2352b22ff2ec214d412c318b67f2243ccfc0a07dbf31b",
+    "sourcePublishedAt": 1746057600,
     "designatedAt": 1700000000
   }
 ]
