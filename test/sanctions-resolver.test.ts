@@ -33,7 +33,7 @@ async function deployResolver(initialAttester: `0x${string}`): Promise<Stack> {
   const eas = await deployEAS(viem, owner);
   const resolver = await viem.deployContract(
     "SanctionsResolver",
-    [eas.eas.address, initialAttester],
+    [eas.eas.address, owner.account.address, initialAttester],
     { client: { wallet: owner } },
   );
   const schemaUID = await registerSchema(eas.schemaRegistry, resolver.address, true);
@@ -66,10 +66,35 @@ describe("SanctionsResolver: constructor", () => {
     const eas = await deployEAS(viem, owner);
     const resolver = await viem.deployContract(
       "SanctionsResolver",
-      [eas.eas.address, ZERO_ADDRESS],
+      [eas.eas.address, owner.account.address, ZERO_ADDRESS],
       { client: { wallet: owner } },
     );
     assert.equal(await resolver.read.trustedAttesters([ZERO_ADDRESS]), false);
+  });
+
+  it("sets owner to initialOwner argument, not the deployer", async () => {
+    const eas = await deployEAS(viem, owner);
+    // Deployer is `owner` wallet; initialOwner is `newOwner` wallet.  After
+    // construction, owner() must reflect the constructor argument so a CREATE2
+    // factory can deploy on behalf of someone else without becoming the owner.
+    const resolver = await viem.deployContract(
+      "SanctionsResolver",
+      [eas.eas.address, newOwner.account.address, attester.account.address],
+      { client: { wallet: owner } },
+    );
+    expectAddressEqual(await resolver.read.owner(), newOwner.account.address);
+  });
+
+  it("reverts when initialOwner is the zero address", async () => {
+    const eas = await deployEAS(viem, owner);
+    await expectRevert(
+      viem.deployContract(
+        "SanctionsResolver",
+        [eas.eas.address, ZERO_ADDRESS, attester.account.address],
+        { client: { wallet: owner } },
+      ),
+      "OwnableInvalidOwner",
+    );
   });
 });
 

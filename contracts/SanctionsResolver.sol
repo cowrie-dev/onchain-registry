@@ -31,7 +31,10 @@ contract SanctionsResolver is SchemaResolver, Ownable {
     event Sanctioned(address indexed account, address indexed attester, bytes32 uid);
     event Unsanctioned(address indexed account, bytes32 uid);
 
-    constructor(IEAS eas, address initialAttester) SchemaResolver(eas) Ownable(msg.sender) {
+    constructor(IEAS eas, address initialOwner, address initialAttester)
+        SchemaResolver(eas)
+        Ownable(initialOwner)
+    {
         if (initialAttester != address(0)) {
             trustedAttesters[initialAttester] = true;
             emit AttesterTrusted(initialAttester, true);

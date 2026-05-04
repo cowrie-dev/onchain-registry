@@ -31,15 +31,24 @@ async function main() {
   }
   const deployer = walletClient.account.address;
 
+  // initialOwner is optional: defaults to deployer for the common single-EOA case.
+  // For Safe-as-owner deploys, pass --initial-owner=<safe>.
+  const initialOwnerArg = resolveOption("--initial-owner", [
+    "INITIAL_OWNER",
+    "RESOLVER_INITIAL_OWNER",
+  ]);
+  const initialOwner: Address = initialOwnerArg ? getAddress(initialOwnerArg) : deployer;
+
   console.log(`Deploying SanctionsResolver`);
   console.log(`  network        : ${networkName} (chainId ${chainId})`);
   console.log(`  deployer       : ${deployer}`);
   console.log(`  EAS            : ${easAddress}`);
+  console.log(`  initial owner  : ${initialOwner}`);
   console.log(`  initial attester: ${initialAttesterArg}`);
 
   const resolver = await viem.deployContract(
     "SanctionsResolver",
-    [easAddress, getAddress(initialAttesterArg)],
+    [easAddress, initialOwner, getAddress(initialAttesterArg)],
     { client: { wallet: walletClient } },
   );
 
@@ -50,7 +59,7 @@ async function main() {
     chainId,
     address: resolver.address,
     deployer,
-    owner: deployer,
+    owner: initialOwner,
     initialAttester: initialAttesterArg,
     easAddress,
   });
