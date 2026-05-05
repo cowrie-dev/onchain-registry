@@ -16,17 +16,17 @@
   "main": "index.js",
   "scripts": {
     "test": "npx hardhat test",
-    "deploy": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy.ts --network mainnet",
+    "deploy": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy.ts --network ${NETWORK:-sepolia}",
     "deploy:create3": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy-create3.ts",
-    "register-schema": "op run --env-file=.env.ref -- hardhat run scripts/register-schema.ts --network mainnet",
-    "registry:trust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/trust-attester.ts --network mainnet",
-    "registry:untrust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/untrust-attester.ts --network mainnet",
-    "registry:list-trusted-attesters": "op run --env-file=.env.ref -- hardhat run scripts/actions/list-trusted-attesters.ts --network mainnet",
-    "registry:sanction": "op run --env-file=.env.ref -- hardhat run scripts/actions/sanction.ts --network mainnet",
-    "registry:unsanction": "op run --env-file=.env.ref -- hardhat run scripts/actions/unsanction.ts --network mainnet",
-    "registry:check": "op run --env-file=.env.ref -- hardhat run scripts/actions/check.ts --network mainnet",
-    "registry:list-sanctioned": "op run --env-file=.env.ref -- hardhat run scripts/actions/list-sanctioned.ts --network mainnet",
-    "registry:transfer-owner": "op run --env-file=.env.ref -- hardhat run scripts/actions/transfer-ownership.ts --network mainnet"
+    "register-schema": "op run --env-file=.env.ref -- hardhat run scripts/register-schema.ts --network ${NETWORK:-sepolia}",
+    "registry:trust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/trust-attester.ts --network ${NETWORK:-sepolia}",
+    "registry:untrust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/untrust-attester.ts --network ${NETWORK:-sepolia}",
+    "registry:list-trusted-attesters": "hardhat run scripts/actions/list-trusted-attesters.ts --network ${NETWORK:-sepolia}",
+    "registry:sanction": "op run --env-file=.env.ref -- hardhat run scripts/actions/sanction.ts --network ${NETWORK:-sepolia}",
+    "registry:unsanction": "op run --env-file=.env.ref -- hardhat run scripts/actions/unsanction.ts --network ${NETWORK:-sepolia}",
+    "registry:check": "op run --env-file=.env.ref -- hardhat run scripts/actions/check.ts --network ${NETWORK:-sepolia}",
+    "registry:list-sanctioned": "op run --env-file=.env.ref -- hardhat run scripts/actions/list-sanctioned.ts --network ${NETWORK:-sepolia}",
+    "registry:transfer-owner": "op run --env-file=.env.ref -- hardhat run scripts/actions/transfer-ownership.ts --network ${NETWORK:-sepolia}"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.3",

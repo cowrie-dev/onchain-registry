@@ -58,12 +58,14 @@ export async function resolveWallet(
 export async function getResolverContract(
   viem: ViemHelpers,
   address: string,
-  wallet: WalletClient,
+  wallet?: WalletClient,
 ): Promise<ContractReturnType<"SanctionsResolver">> {
   if (!address) {
     throw new Error("Resolver address is required.");
   }
-  return viem.getContractAt("SanctionsResolver", getAddress(address), { client: { wallet } });
+  return wallet
+    ? viem.getContractAt("SanctionsResolver", getAddress(address), { client: { wallet } })
+    : viem.getContractAt("SanctionsResolver", getAddress(address));
 }
 
 export async function getEASContract(

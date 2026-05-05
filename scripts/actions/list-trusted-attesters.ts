@@ -2,16 +2,11 @@ import {
   connectViem,
   getResolverContract,
   loadResolverDeployment,
-  resolveOption,
-  resolveWallet,
 } from "../utils/resolver.js";
 
-const fromArg = resolveOption("--from", ["FROM"]);
-
 const { viem, chainId } = await connectViem();
-const wallet = await resolveWallet(viem, fromArg);
 const deployment = await loadResolverDeployment(chainId);
-const resolver = await getResolverContract(viem, deployment.address, wallet);
+const resolver = await getResolverContract(viem, deployment.address);
 
 const events = await resolver.getEvents.AttesterTrusted({}, { fromBlock: 0n });
 const candidates = new Set<string>();
