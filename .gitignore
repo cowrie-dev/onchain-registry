@@ -24,3 +24,6 @@
 
 # Git worktrees for isolated agent development
 /.worktrees
+
+# CREATE3 deploy calldata written by scripts/deploy-create3.ts in PRINT_CALLDATA mode
+/calldata

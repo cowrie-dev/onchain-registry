@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { network } from "hardhat";
@@ -161,10 +161,14 @@ async function main() {
       functionName: "deployCreate3",
       args: [salt, initCode],
     });
+    const outDir = resolve(process.cwd(), "calldata");
+    await mkdir(outDir, { recursive: true });
+    const outPath = resolve(outDir, `${networkName}-${chainId}.hex`);
+    await writeFile(outPath, `${data}\n`, "utf8");
+    console.log(`to              : ${createx}`);
     console.log(`value           : 0`);
     console.log(`calldata bytes  : ${(data.length - 2) / 2}`);
-    console.log(`calldata        :`);
-    console.log(data);
+    console.log(`calldata file   : ${outPath}`);
     return;
   }
 
