@@ -12,10 +12,12 @@ Hardhat 3 is meaningfully different from Hardhat 2: network access goes through 
 
 ```shell
 npm test                       # runs node:test via `npx hardhat test`
-npm run deploy                 # deploys SanctionsResolver to the `mainnet` network
+npm run deploy                 # deploys SanctionsResolver to sepolia (override with NETWORK=mainnet)
 npm run register-schema        # registers the sanctions schema with EAS, persists schemaUID
 npm run registry:<action>      # see README for the full action list
 ```
+
+All network-bound npm scripts use `--network ${NETWORK:-sepolia}`.  Set `NETWORK=mainnet` (or any other configured network) to override; do NOT append `-- --network ...` to npm.
 
 Hardhat 3 does NOT support `--test-name-pattern` at the top level; run the full suite with `npx hardhat test` (or `npm test`) and let the runner print every result.
 
@@ -84,11 +86,12 @@ revocable, with the resolver as the schema's resolver.
 
 ## Networks and deployments
 
-`hardhat.config.ts` defines a live `mainnet` network (Ethereum, `chainType: "l1"`),
-the legacy `shape` network (Shape L2, chainId 360, kept so legacy AddressRegistry
-deployments remain reachable), plus simulated `hardhatMainnet` and `hardhatOp`.
-`npm run deploy` and every `registry:*` script target `mainnet` by default; pass
-`--network <other>` to `npx hardhat run` to target another configured network.
+`hardhat.config.ts` defines live `mainnet` and `sepolia` networks (Ethereum,
+`chainType: "l1"`), the legacy `shape` network (Shape L2, chainId 360, kept so
+legacy AddressRegistry deployments remain reachable), plus simulated
+`hardhatMainnet` and `hardhatOp`.  `npm run deploy` and every `registry:*`
+script target `sepolia` by default; set `NETWORK=<name>` to retarget (the
+npm scripts interpolate it into `--network`).
 
 Deployments are recorded to `deployments.json`, keyed by chain ID then contract
 name.  The new resolver deployment record carries `address`, `deployer`, `owner`,
@@ -96,6 +99,10 @@ name.  The new resolver deployment record carries `address`, `deployer`, `owner`
 `scripts/register-schema.ts`) `schemaUID`.  EAS contract addresses per chain
 live in `scripts/utils/eas.ts`; add an entry to `EAS_ADDRESSES` to support a
 new chain.
+
+`scripts/deploy-create3.ts` in `PRINT_CALLDATA=1` mode writes the encoded
+`deployCreate3(salt, initCode)` calldata to `calldata/<network>-<chainId>.hex`
+(gitignored) for offline signing via a custody UI; nothing is broadcast.
 
 ## Testing
 
