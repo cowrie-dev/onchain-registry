@@ -18,6 +18,7 @@ export type DeploymentRecord = {
   initialAttester: string;
   easAddress: string;
   schemaUID?: string;
+  creationTxHash?: string;
   deployedAt: string;
 };
 

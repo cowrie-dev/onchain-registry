@@ -78,12 +78,17 @@ const config: HardhatUserConfig = {
   },
   verify: {
     etherscan: {
-      apiKey: "n/a",
-      enabled: false,
+      apiKey: configVariable("ETHERSCAN_API_KEY"),
+      enabled: true,
     },
     blockscout: {
       enabled: true,
     },
+    // No `sourcify` entry: hardhat-verify@3.0.2 ships a stub Sourcify task
+    // (action body is just a "not supported yet" warning), so toggling it
+    // here does nothing.  Sourcify itself works fine; submit via
+    // sourcify.dev/#/verifier or its `/server/verify` API directly until the
+    // plugin lands a real implementation.
   },
 };
 

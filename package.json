@@ -19,6 +19,7 @@
     "deploy": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy.ts --network ${NETWORK:-sepolia}",
     "deploy:create3": "op run --env-file=.env.ref -- npx hardhat run scripts/deploy-create3.ts",
     "register-schema": "op run --env-file=.env.ref -- hardhat run scripts/register-schema.ts --network ${NETWORK:-sepolia}",
+    "verify:sourcify": "hardhat run scripts/verify-sourcify.ts --network ${NETWORK:-sepolia}",
     "registry:trust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/trust-attester.ts --network ${NETWORK:-sepolia}",
     "registry:untrust-attester": "op run --env-file=.env.ref -- hardhat run scripts/actions/untrust-attester.ts --network ${NETWORK:-sepolia}",
     "registry:list-trusted-attesters": "hardhat run scripts/actions/list-trusted-attesters.ts --network ${NETWORK:-sepolia}",
