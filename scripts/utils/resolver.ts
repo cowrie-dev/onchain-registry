@@ -79,9 +79,11 @@ export async function getEASContract(
 export async function getSchemaRegistryContract(
   viem: ViemHelpers,
   address: string,
-  wallet: WalletClient,
+  wallet?: WalletClient,
 ): Promise<ContractReturnType<"SchemaRegistry">> {
-  return viem.getContractAt("SchemaRegistry", getAddress(address), { client: { wallet } });
+  return wallet
+    ? viem.getContractAt("SchemaRegistry", getAddress(address), { client: { wallet } })
+    : viem.getContractAt("SchemaRegistry", getAddress(address));
 }
 
 export async function loadDeployments(): Promise<DeploymentManifest> {

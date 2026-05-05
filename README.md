@@ -38,6 +38,22 @@ npm run register-schema
 After `register-schema`, `deployments.json` carries `address`, `easAddress`, and
 `schemaUID` for the deployed network.  Action scripts read these automatically.
 
+### Offline / custody-signed flow
+
+Both `deploy` and `register-schema` accept `PRINT_CALLDATA=1` (or `--print-calldata`)
+to emit the calldata for an external signer (e.g. a custody UI) without broadcasting:
+
+```shell
+NETWORK=mainnet PRINT_CALLDATA=1 SALT=0x... INITIAL_ATTESTER=0x... npm run deploy
+NETWORK=mainnet PRINT_CALLDATA=1 npm run register-schema
+```
+
+Output is written to `calldata/<network>-<chainId>.hex` (deploy) and
+`calldata/<network>-<chainId>-schema.hex` (schema register).  No wallet/key is
+required in this mode.  After broadcasting via your custody tool, re-run
+`register-schema` (any mode); it will detect the on-chain schema and record
+`schemaUID` in `deployments.json`.
+
 ## Resolver management
 
 Action scripts accept arguments via CLI flags or environment variables.

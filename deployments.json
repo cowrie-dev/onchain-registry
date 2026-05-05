@@ -9,6 +9,20 @@
       "deployedAt": "2025-10-03T21:34:36.966Z"
     }
   },
+  "1": {
+    "SanctionsResolver": {
+      "chainName": "mainnet",
+      "address": "0x0fac5384c9fCF9e2495EE5B4ea97416257e30fAC",
+      "deployer": "0x8035B1a1cC4257B96e85E3924221bbCBb2Ed2a69",
+      "owner": "0x8035B1a1cC4257B96e85E3924221bbCBb2Ed2a69",
+      "initialAttester": "0x8035B1a1cC4257B96e85E3924221bbCBb2Ed2a69",
+      "easAddress": "0xA1207F3BBa224E2c9c3c6D5aF63D0eb1582Ce587",
+      "salt": "0x8035b1a1cc4257b96e85e3924221bbcbb2ed2a6900fc1b58c78f1f14019f2b85",
+      "createxAddress": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+      "deployedAt": "2026-05-05T00:00:00.000Z",
+      "schemaUID": "0xa644034a40c9ed8025a75bca841f8d8a85a12a0297f89b1829a23de6f41006cc"
+    }
+  },
   "360": {
     "AddressRegistry": {
       "chainName": "Shape",
