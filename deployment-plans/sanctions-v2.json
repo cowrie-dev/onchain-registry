@@ -1,0 +1,12 @@
+{
+  "contract": "SanctionsResolverV2",
+  "status": "prepared-not-deployed",
+  "address": "0x0FaC8987bc6E6a688082BFD0440DF5d6Ee670FAc",
+  "salt": "0x8035b1a1cc4257b96e85e3924221bbcbb2ed2a6900dfc939382c71c401bf575d",
+  "deployer": "0x8035B1a1cC4257B96e85E3924221bbCBb2Ed2a69",
+  "owner": "0x8035B1a1cC4257B96e85E3924221bbCBb2Ed2a69",
+  "initialAttester": "0x8035B1a1cC4257B96e85E3924221bbCBb2Ed2a69",
+  "createx": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+  "chains": [1, 11155111],
+  "supersedes": "0x0fac5384c9fCF9e2495EE5B4ea97416257e30fAC"
+}

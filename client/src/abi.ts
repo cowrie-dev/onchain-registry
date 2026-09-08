@@ -1,0 +1,20 @@
+import { parseAbi } from 'viem';
+export const sanctionsResolverV2Abi = parseAbi([
+    'struct Designation { bytes32 attestationUID; address attester; uint64 attestedAt; }',
+    'function isSanctioned(address account) view returns (bool)',
+    'function isSanctionedBatch(address[] accounts) view returns (bool[])',
+    'function getDesignation(address account) view returns (Designation)',
+    'function accountKey(bytes32 network, string account) pure returns (bytes32)',
+    'function supportsNetwork(bytes32 network) pure returns (bool)',
+    'function isSanctionedAccount(bytes32 network, string account) view returns (bool)',
+    'function isSanctionedKey(bytes32 key) view returns (bool)',
+    'function isSanctionedKeyBatch(bytes32[] keys) view returns (bool[])',
+    'function getDesignationByKey(bytes32 key) view returns (Designation)',
+    'function sanctionedCount() view returns (uint256)',
+    'function sanctionedAddresses() view returns (address[])',
+    'function sanctionedRange(uint256 offset, uint256 limit) view returns (address[])',
+    'function sanctionedAccountCount() view returns (uint256)',
+    'function sanctionedKeyRange(uint256 offset, uint256 limit) view returns (bytes32[])',
+    'function schemaUID() view returns (bytes32)',
+    'function getEAS() view returns (address)',
+]);

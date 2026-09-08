@@ -142,8 +142,8 @@ async function main() {
   }
 
   const header = printCalldata
-    ? "CREATE3 calldata for SanctionsResolver (no broadcast)"
-    : "Deploying SanctionsResolver via CREATE3";
+    ? "CREATE3 calldata for SanctionsResolverV2 (no broadcast)"
+    : "Deploying SanctionsResolverV2 via CREATE3";
   console.log(header);
   console.log(`  network         : ${networkName} (chainId ${chainId})`);
   console.log(`  deployer (from) : ${deployer}`);
@@ -196,7 +196,7 @@ async function main() {
     );
   }
 
-  console.log(`SanctionsResolver deployed to: ${predicted}`);
+  console.log(`SanctionsResolverV2 deployed to: ${predicted}`);
 
   await recordDeployment({
     networkName,
@@ -250,7 +250,7 @@ async function recordDeployment(metadata: DeploymentMetadata): Promise<void> {
 
   const chainKey = String(metadata.chainId);
   const chainManifest = manifest[chainKey] ?? {};
-  chainManifest.SanctionsResolver = {
+  chainManifest.SanctionsResolverV2 = {
     chainName: metadata.networkName,
     address: metadata.address,
     deployer: metadata.deployer,

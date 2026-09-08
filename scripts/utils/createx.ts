@@ -139,7 +139,7 @@ export function addressMatchesMatching(address: Address, matching: string): bool
   return true;
 }
 
-/// Reads SanctionsResolver creation bytecode from Hardhat's compiled artifact
+/// Reads SanctionsResolverV2 creation bytecode from Hardhat's compiled artifact
 /// and concatenates the ABI-encoded constructor args.  This is the byte string
 /// CreateX's CREATE3 proxy will execute as a contract-creation initcode.
 export async function buildResolverInitCode(args: {
@@ -152,7 +152,7 @@ export async function buildResolverInitCode(args: {
     args.artifactPath ??
     resolve(
       process.cwd(),
-      "artifacts/contracts/SanctionsResolver.sol/SanctionsResolver.json",
+      "artifacts/contracts/SanctionsResolverV2.sol/SanctionsResolverV2.json",
     );
   const artifact = JSON.parse(await readFile(path, "utf8")) as { bytecode: Hex };
   const encodedArgs = encodeAbiParameters(

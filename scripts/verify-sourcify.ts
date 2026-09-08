@@ -18,7 +18,7 @@ type BuildInfoOutput = {
 };
 
 const SOURCIFY_API = "https://sourcify.dev/server";
-const CONTRACT_NAME = "SanctionsResolver";
+const CONTRACT_NAME = "SanctionsResolverV2";
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 180_000;
@@ -31,7 +31,7 @@ const creationTxHash = creationTxFromArg ?? deployment.creationTxHash;
 if (!creationTxHash) {
   throw new Error(
     `Creation tx hash required.  Pass --creation-tx <hash>, set CREATION_TX, ` +
-      `or add "creationTxHash" to deployments.json[${chainId}].SanctionsResolver.`,
+      `or add "creationTxHash" to deployments.json[${chainId}].SanctionsResolverV2.`,
   );
 }
 

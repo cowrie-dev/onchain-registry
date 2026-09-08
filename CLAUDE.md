@@ -31,7 +31,16 @@ The project uses ESM with `"moduleResolution": "node16"`, so TypeScript files im
 
 `scripts/utils/resolver.ts` defines `resolveOption` / `requireOption`, which read from CLI flags first (`--accounts=...`, `--from`, etc.) and then fall back to env vars (in order: caller-provided keys, then the flag's own uppercased form).  README documents the env-var path; both are valid and any new action script should use these helpers rather than reading `process.argv` or `process.env` directly.
 
-## Contract architecture
+## V2 implementation
+
+Current operational scripts target `SanctionsResolverV2`, the replacement for the
+unpublished V1. V2's one schema carries `network` and `account` before the original
+seven evidence fields. `client/src/accounts.ts` defines normalization and key
+encoding, and is also used by the scripts. Preserve exact Chainalysis ABI bytes.
+See README.md for network IDs, literal handling, enumeration and deployment order.
+V1 source and tests remain historical; the section below describes V1 only.
+
+## Historical V1 contract architecture
 
 Single contract: `contracts/SanctionsResolver.sol`.  It extends EAS `SchemaResolver`
 (from `@ethereum-attestation-service/eas-contracts`) and OpenZeppelin `Ownable`.

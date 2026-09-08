@@ -39,7 +39,7 @@ async function main() {
   ]);
   const initialOwner: Address = initialOwnerArg ? getAddress(initialOwnerArg) : deployer;
 
-  console.log(`Deploying SanctionsResolver`);
+  console.log(`Deploying SanctionsResolverV2`);
   console.log(`  network        : ${networkName} (chainId ${chainId})`);
   console.log(`  deployer       : ${deployer}`);
   console.log(`  EAS            : ${easAddress}`);
@@ -47,12 +47,12 @@ async function main() {
   console.log(`  initial attester: ${initialAttesterArg}`);
 
   const resolver = await viem.deployContract(
-    "SanctionsResolver",
+    "SanctionsResolverV2",
     [easAddress, initialOwner, getAddress(initialAttesterArg)],
     { client: { wallet: walletClient } },
   );
 
-  console.log(`SanctionsResolver deployed to: ${resolver.address}`);
+  console.log(`SanctionsResolverV2 deployed to: ${resolver.address}`);
 
   await recordDeployment({
     networkName,
@@ -100,7 +100,7 @@ async function recordDeployment(metadata: DeploymentMetadata): Promise<void> {
 
   const chainKey = String(metadata.chainId);
   const chainManifest = manifest[chainKey] ?? {};
-  chainManifest.SanctionsResolver = {
+  chainManifest.SanctionsResolverV2 = {
     chainName: metadata.networkName,
     address: metadata.address,
     deployer: metadata.deployer,

@@ -27,7 +27,8 @@
     "registry:unsanction": "op run --env-file=.env.ref -- hardhat run scripts/actions/unsanction.ts --network ${NETWORK:-sepolia}",
     "registry:check": "op run --env-file=.env.ref -- hardhat run scripts/actions/check.ts --network ${NETWORK:-sepolia}",
     "registry:list-sanctioned": "op run --env-file=.env.ref -- hardhat run scripts/actions/list-sanctioned.ts --network ${NETWORK:-sepolia}",
-    "registry:transfer-owner": "op run --env-file=.env.ref -- hardhat run scripts/actions/transfer-ownership.ts --network ${NETWORK:-sepolia}"
+    "registry:transfer-owner": "op run --env-file=.env.ref -- hardhat run scripts/actions/transfer-ownership.ts --network ${NETWORK:-sepolia}",
+    "client:build": "tsc -p client/tsconfig.json"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.3",
@@ -40,7 +41,9 @@
     "viem": "^2.37.12"
   },
   "dependencies": {
+    "@ensdomains/address-encoder": "1.1.4",
     "@ethereum-attestation-service/eas-contracts": "^1.8.0",
     "@openzeppelin/contracts": "^5.4.0"
-  }
+  },
+  "private": true
 }

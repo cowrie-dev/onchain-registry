@@ -1,0 +1,16 @@
+{
+  "name": "@cowrie/sanctions-client",
+  "version": "0.1.0",
+  "description": "Chainalysis-compatible Cowrie OFAC oracle client with multi-network address normalization",
+  "type": "module",
+  "license": "ISC",
+  "repository": { "type": "git", "url": "git+https://github.com/cowrie-dev/onchain-registry.git", "directory": "client" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "scripts": { "build": "tsc -p tsconfig.json", "prepack": "npm run build" },
+  "dependencies": { "@ensdomains/address-encoder": "1.1.4" },
+  "peerDependencies": { "viem": "^2.37.12" },
+  "devDependencies": { "typescript": "~5.8.0" },
+  "publishConfig": { "access": "public" }
+}

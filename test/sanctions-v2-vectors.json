@@ -1,0 +1,107 @@
+[
+  {
+    "network": "BTC",
+    "source": "12aNKp2iDKuhEde2YfPdd4DFGenRUTKupL",
+    "account": "12aNKp2iDKuhEde2YfPdd4DFGenRUTKupL",
+    "literal": false,
+    "key": "0xe7a2c68f7901cb9177072cac8b3602192db9e8cdd53b6fe62f6c60448610c9f0"
+  },
+  {
+    "network": "EVM",
+    "source": "0x252a8bd2319d8a555b872990601221b3a2053bce",
+    "account": "0x252a8bd2319d8a555b872990601221b3a2053bce",
+    "literal": false,
+    "key": "0x0033083121095ede7fd88d836aa66e70b29785baf8a6524ab4d6de288913b6de"
+  },
+  {
+    "network": "XMR",
+    "source": "44dZUJ7w1T3fKAvFW8XyXUVoAGSbFvXef2wcbnsjNKGWYorpLJBjth5VKSFhLGkpYKJb2J341tdZHBnbpv72WL7e8zuxfR2",
+    "account": "44dZUJ7w1T3fKAvFW8XyXUVoAGSbFvXef2wcbnsjNKGWYorpLJBjth5VKSFhLGkpYKJb2J341tdZHBnbpv72WL7e8zuxfR2",
+    "literal": false,
+    "key": "0x6b49cf823b6ae25525fc0a33a9f8eed547cd2fc9f12b407c1efbce85d5144369"
+  },
+  {
+    "network": "LTC",
+    "source": "LaizKtS5DUhPuP1nTQcc83MS7HwK6vk85z",
+    "account": "LaizKtS5DUhPuP1nTQcc83MS7HwK6vk85z",
+    "literal": false,
+    "key": "0x5317bfeadaef8971d44e24370b06dfe963412fa2f3b61be4ba00af84be374bec"
+  },
+  {
+    "network": "ZEC",
+    "source": "t1g7wowvQ8gn2v8jrU1biyJ26sieNqNsBJy",
+    "account": "t1g7wowvQ8gn2v8jrU1biyJ26sieNqNsBJy",
+    "literal": false,
+    "key": "0xc1955c39c22dbfc6ce440892385da8261a512929e9d5c9513708635df8e5ec48"
+  },
+  {
+    "network": "DASH",
+    "source": "XnPFsRWTaSgiVauosEwQ6dEitGYXgwznz2",
+    "account": "XnPFsRWTaSgiVauosEwQ6dEitGYXgwznz2",
+    "literal": false,
+    "key": "0x18fdd9e824de2b8ce3de15f9fe619671a44d2c0e2ba42f4c60b619b5befba03e"
+  },
+  {
+    "network": "BTG",
+    "source": "GPwg61XoHqQPNmAucFACuQ5H9sGCDv9TpS",
+    "account": "GPwg61XoHqQPNmAucFACuQ5H9sGCDv9TpS",
+    "literal": false,
+    "key": "0x428e27c687b275200be8692948642b0d9934c8472356afefe6a2ae5410d0a806"
+  },
+  {
+    "network": "BSV",
+    "source": "12sjrrhoFEsedNRhtgwvvRqjFTh8fZTDX9",
+    "account": "12sjrrhoFEsedNRhtgwvvRqjFTh8fZTDX9",
+    "literal": false,
+    "key": "0x2c3c8b1610431f34d1f2f2c3718f63ddc29a3ad509e1927371a4736891cd6218"
+  },
+  {
+    "network": "BCH",
+    "source": "18M8bJWMzWHDBMxoLqjHHAffdRy4SrzkfB",
+    "account": "bitcoincash:qpgf0ztxq3mwfq6eg5versgfdzq9c3pwv5jsk6wnay",
+    "literal": false,
+    "key": "0x9532a11515be95d982539526c858f4737b67a22e4ec1fe58d67724a517b72392"
+  },
+  {
+    "network": "XVG",
+    "source": "DFFJhnQNZf8rf67tYnesPu7MuGUpYtzv7Z",
+    "account": "DFFJhnQNZf8rf67tYnesPu7MuGUpYtzv7Z",
+    "literal": false,
+    "key": "0x5bbb20d834732c63d382e30f78135ca4fed19275da56e6b1f34456d18e746ab4"
+  },
+  {
+    "network": "XRP",
+    "source": "rnXyVQzgxZe7TR1EPzTkGj2jxH4LMJYh66",
+    "account": "rnXyVQzgxZe7TR1EPzTkGj2jxH4LMJYh66",
+    "literal": false,
+    "key": "0xa3a030de08490ea95610cb9cd626d7b6f3d55b4e6e302f12def35bf2f8b8c089"
+  },
+  {
+    "network": "TRX",
+    "source": "TNiq9AXBp9EjUqhDhrwrfvAA8U3GUQZH81",
+    "account": "TNiq9AXBp9EjUqhDhrwrfvAA8U3GUQZH81",
+    "literal": false,
+    "key": "0xc409993f089ee6d380d20d17a9586b2175412319c3b8780a6acc4904558cac32"
+  },
+  {
+    "network": "SOL",
+    "source": "42RLPACwZPx3vYYmxSueqsogfynBDqXK298EDsNoyoHi",
+    "account": "42RLPACwZPx3vYYmxSueqsogfynBDqXK298EDsNoyoHi",
+    "literal": false,
+    "key": "0x3ceea611540fc08dcff1cb57047cb5262470073823cb7319573c06a56833025b"
+  },
+  {
+    "network": "DOGE",
+    "source": "DHzAVdEoL3PjGeLWNdEJwwMA1CeQ9J9Cpo",
+    "account": "DHzAVdEoL3PjGeLWNdEJwwMA1CeQ9J9Cpo",
+    "literal": false,
+    "key": "0x03ba58b189f7a687d9e183940374baf570e689f365cf2247aff81a5b8ecfe07c"
+  },
+  {
+    "network": "BNB",
+    "source": "bnb136ns6lfw4zs5hg4n85vdthaad7hq5m4gtkgf23",
+    "account": "bnb136ns6lfw4zs5hg4n85vdthaad7hq5m4gtkgf23",
+    "literal": false,
+    "key": "0x664cd180763d32fd21ff04ff0e7d0841a8b9919daf463e3614a6c28e75a9d227"
+  }
+]

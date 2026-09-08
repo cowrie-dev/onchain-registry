@@ -1,5 +1,6 @@
 [
   {
+    "network": "EVM",
     "address": "0x0000000000000000000000000000000000000001",
     "source": "TEST",
     "sourceUID": "TEST-0001",
@@ -10,6 +11,7 @@
     "designatedAt": 1746057600
   },
   {
+    "network": "EVM",
     "address": "0x0000000000000000000000000000000000000002",
     "source": "TEST",
     "sourceUID": "TEST-0002",
@@ -20,6 +22,7 @@
     "designatedAt": 1746057600
   },
   {
+    "network": "EVM",
     "address": "0x0000000000000000000000000000000000000003",
     "source": "TEST",
     "sourceUID": "TEST-0003",
@@ -30,6 +33,7 @@
     "designatedAt": 1746057600
   },
   {
+    "network": "EVM",
     "address": "0x000000000000000000000000000000000000dEaD",
     "source": "TEST",
     "sourceUID": "TEST-DEAD",

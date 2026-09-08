@@ -1,8 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { decodeEventLog, getAddress, parseAbiItem, type Hex } from "viem";
+import { decodeEventLog, getAddress, isAddress, zeroAddress, parseAbiItem, type Hex } from "viem";
 
+import { networkId, normalizeSourceAccount, type SanctionsNetwork } from "../utils/accounts.js";
 import { encodeDesignation } from "../utils/eas.js";
 import {
   connectViem,
@@ -15,6 +16,7 @@ import {
 
 type SanctionEntry = {
   address: string;
+  network: SanctionsNetwork;
   source: string;
   sourceUID: string;
   category: string;
@@ -43,12 +45,18 @@ if (!deployment.schemaUID) {
 }
 const eas = await getEASContract(viem, deployment.easAddress, wallet);
 
-const requestData = entries.map((entry) => ({
-  recipient: getAddress(entry.address),
+const normalizedEntries = entries.flatMap(entry => {
+  const canonical = normalizeSourceAccount(entry.network, entry.address).account;
+  return [...new Set([entry.address.trim(), canonical])].map(address => ({ ...entry, address }));
+});
+const requestData = normalizedEntries.map((entry) => ({
+  recipient: entry.network === "EVM" && isAddress(entry.address, { strict: false }) ? getAddress(entry.address) : zeroAddress,
   expirationTime: 0n,
   revocable: true,
   refUID: "0x0000000000000000000000000000000000000000000000000000000000000000" as Hex,
   data: encodeDesignation({
+    network: networkId(entry.network),
+    account: entry.address,
     source: entry.source,
     sourceUID: entry.sourceUID,
     category: entry.category,
