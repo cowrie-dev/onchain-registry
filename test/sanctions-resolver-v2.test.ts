@@ -145,6 +145,21 @@ describe('SanctionsResolverV2 compatibility and account state', () => {
         await assert.rejects(lookupSanctions({client:failingClient,resolver:resolver.address,network:'BTC',account:btc}),/RPC unavailable/);
     });
 
+    it('screens a malformed BTC source literal without sanctioning the truncated address', async () => {
+        const { resolver, attest } = await setup();
+        const malformed = '1QRus492mJL2Cum4E2TSqUmjdCBE5m33yG';
+        const truncated = '16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf';
+        await attest('BTC', malformed);
+        const client = await viem.getPublicClient();
+        const results = await lookupSanctionsBatch({ client, resolver: resolver.address, accounts: [
+            { network: 'BTC', account: malformed }, { network: 'BTC', account: truncated },
+        ] });
+        assert.equal(results[0].status, 'listed');
+        assert.equal(results[0].sourceLiteral, true);
+        assert.equal(results[0].canonicalAccount, null);
+        assert.equal(results[1].status, 'not-listed');
+    });
+
     it('matches the publisher vectors for all 15 source address families', async () => {
         const {resolver,attest} = await setup();
         const vectors = JSON.parse(readFileSync(new URL('./sanctions-v2-vectors.json', import.meta.url), 'utf8')) as Array<{network:SanctionsNetwork;source:string;account:string;key:Hex}>;
