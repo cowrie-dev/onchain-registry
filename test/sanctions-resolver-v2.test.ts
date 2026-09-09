@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { network } from 'hardhat';
-import { encodeAbiParameters, encodePacked, getAddress, keccak256, parseAbi, zeroAddress, zeroHash, type Hex } from 'viem';
+import { encodeAbiParameters, encodeFunctionData, encodePacked, getAddress, getContractAddress, keccak256, parseAbi, zeroAddress, zeroHash, type Hex } from 'viem';
 import { deployEAS, expectRevert } from './helpers/eas.js';
 import { lookupSanctions, lookupSanctionsBatch } from '../client/src/index.js';
+import { encodeResolverInitialization } from '../scripts/utils/createx.js';
 import { SCHEMA_STRING, encodeDesignation } from '../scripts/utils/eas.js';
 import { networkId, normalizeSanctionsAccount, sanctionsAccountKey, type SanctionsNetwork } from '../scripts/utils/accounts.js';
 
@@ -13,9 +14,14 @@ before(async () => { viem = (await network.connect()).viem; });
 const originalAbi = parseAbi(['function isSanctioned(address) view returns (bool)']);
 const btc = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
 async function setup() {
-    const [owner, stranger] = await viem.getWalletClients();
+    const [owner, stranger, upgradeOwner] = await viem.getWalletClients();
     const { eas, schemaRegistry } = await deployEAS(viem, owner);
-    const resolver = await viem.deployContract('SanctionsResolverV2', [eas.address, owner.account.address, owner.account.address]);
+    const implementation = await viem.deployContract('SanctionsResolverV2', [eas.address]);
+    const proxy = await viem.deployContract('TransparentUpgradeableProxy', [implementation.address, upgradeOwner.account.address,
+        encodeResolverInitialization(owner.account.address, owner.account.address)]);
+    const resolver = await viem.getContractAt('SanctionsResolverV2', proxy.address);
+    const adminAddress = getContractAddress({ from: proxy.address, nonce: 1n });
+    const proxyAdmin = await viem.getContractAt('ProxyAdmin', adminAddress, { client: { wallet: upgradeOwner } });
     const schemaUID = keccak256(encodePacked(['string','address','bool'], [SCHEMA_STRING, resolver.address, true]));
     await schemaRegistry.write.register([SCHEMA_STRING, resolver.address, true]);
     assert.equal(await resolver.read.schemaUID(), schemaUID);
@@ -32,7 +38,7 @@ async function setup() {
         return (await resolver.read.getDesignationByKey([sanctionsAccountKey(name, account)])).attestationUID;
     }
     async function revoke(uid: Hex) { await eas.write.revoke([{schema: schemaUID, data: {uid, value: 0n}}]); }
-    return { owner, stranger, eas, schemaRegistry, resolver, request, attest, revoke, schemaUID };
+    return { proxyAdmin, upgradeOwner, implementation, owner, stranger, eas, schemaRegistry, resolver, request, attest, revoke, schemaUID };
 }
 
 describe('SanctionsResolverV2 compatibility and account state', () => {
@@ -151,4 +157,131 @@ describe('SanctionsResolverV2 compatibility and account state', () => {
         assert.equal(await resolver.read.sanctionedAccountCount(),15n);
     });
 
+});
+
+describe('SanctionsResolverV2 transparent proxy lifecycle', () => {
+    it('locks the implementation and initializes the proxy exactly once', async () => {
+        const { implementation, owner, stranger, upgradeOwner, proxyAdmin, resolver, eas } = await setup();
+        await expectRevert(implementation.write.initialize([stranger.account.address, stranger.account.address]), 'InvalidInitialization');
+        await expectRevert(resolver.write.initialize([stranger.account.address, stranger.account.address]), 'InvalidInitialization');
+        assert.equal(getAddress(await resolver.read.owner()), getAddress(owner.account.address));
+        assert.equal(getAddress(await resolver.read.getEAS()), getAddress(eas.address));
+        assert.equal(await implementation.read.owner(), zeroAddress);
+        assert.equal(getAddress(await proxyAdmin.read.owner()), getAddress(upgradeOwner.account.address));
+        const client = await viem.getPublicClient();
+        const adminSlot = await client.getStorageAt({ address: resolver.address,
+            slot: '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103' });
+        assert.equal(getAddress(`0x${adminSlot!.slice(-40)}`), getAddress(proxyAdmin.address));
+        await expectRevert(viem.deployContract('TransparentUpgradeableProxy', [implementation.address, upgradeOwner.account.address,
+            encodeResolverInitialization(zeroAddress, owner.account.address)]), 'OwnableInvalidOwner');
+    });
+
+    it('preserves records, schema, ownership, enumeration and exact ABI bytes across an upgrade', async () => {
+        const { proxyAdmin, owner, stranger, eas, resolver, schemaUID, attest, revoke } = await setup();
+        const evm = owner.account.address;
+        await attest('EVM', evm);
+        const oldBtcUid = await attest('BTC', btc);
+        const btcUid = await attest('BTC', btc);
+        await attest('EVM', '0xmalformed');
+        await resolver.write.setAttesterTrust([stranger.account.address, true]);
+        const keys = await resolver.read.sanctionedKeyRange([0n, 100n]);
+        const designations = await Promise.all(keys.map(key => resolver.read.getDesignationByKey([key])));
+        const client = await viem.getPublicClient();
+        const calldata = `0xdf592f7d${evm.slice(2).padStart(64, '0')}` as Hex;
+        const before = await client.call({ to: resolver.address, data: calldata });
+        const next = await viem.deployContract('SanctionsResolverV2UpgradeMock', [eas.address]);
+        const migration = encodeFunctionData({ abi: next.abi, functionName: 'initializeRevision', args: [42n] });
+        await proxyAdmin.write.upgradeAndCall([resolver.address, next.address, migration]);
+        const upgraded = await viem.getContractAt('SanctionsResolverV2UpgradeMock', resolver.address);
+        assert.equal(await upgraded.read.revisionValue(), 42n);
+        const slot = await client.getStorageAt({ address: resolver.address,
+            slot: '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc' });
+        assert.equal(getAddress(`0x${slot!.slice(-40)}`), getAddress(next.address));
+        assert.equal(await resolver.read.schemaUID(), schemaUID);
+        assert.equal(getAddress(await resolver.read.getEAS()), getAddress(eas.address));
+        assert.equal(getAddress(await resolver.read.owner()), getAddress(owner.account.address));
+        assert.equal(await resolver.read.trustedAttesters([stranger.account.address]), true);
+        assert.deepEqual(await resolver.read.sanctionedKeyRange([0n, 100n]), keys);
+        assert.deepEqual(await Promise.all(keys.map(key => resolver.read.getDesignationByKey([key]))), designations);
+        assert.equal(await resolver.read.sanctionedAccountCount(), 3n);
+        assert.equal(await resolver.read.sanctionedCount(), 1n);
+        assert.deepEqual((await resolver.read.sanctionedAddresses()).map(address => getAddress(address)), [getAddress(evm)]);
+        assert.equal((await client.call({ to: resolver.address, data: calldata })).data, before.data);
+        assert.equal(before.data, `0x${'0'.repeat(63)}1`);
+        const consumer = await viem.deployContract('ChainalysisConsumer');
+        assert.equal(await consumer.read.check([resolver.address, evm]), true);
+        await revoke(oldBtcUid);
+        assert.equal(await resolver.read.isSanctionedAccount([networkId('BTC'), btc]), true);
+        await revoke(btcUid);
+        assert.equal(await resolver.read.isSanctionedAccount([networkId('BTC'), btc]), false);
+        const newUid = await attest('EVM', evm);
+        await revoke(newUid);
+        assert.equal((await client.call({ to: resolver.address, data: calldata })).data, `0x${'0'.repeat(64)}`);
+        assert.equal(await consumer.read.check([resolver.address, evm]), false);
+    });
+
+    it('keeps ProxyAdmin ownership and resolver ownership independent', async () => {
+        const { owner, stranger, upgradeOwner, proxyAdmin, resolver, eas } = await setup();
+        const next = await viem.deployContract('SanctionsResolverV2UpgradeMock', [eas.address]);
+        const adminAsResolverOwner = await viem.getContractAt('ProxyAdmin', proxyAdmin.address, { client: { wallet: owner } });
+        const resolverAsUpgradeOwner = await viem.getContractAt('SanctionsResolverV2', resolver.address, { client: { wallet: upgradeOwner } });
+        await expectRevert(adminAsResolverOwner.write.upgradeAndCall([resolver.address, next.address, '0x']), 'OwnableUnauthorizedAccount');
+        await expectRevert(resolverAsUpgradeOwner.write.setAttesterTrust([stranger.account.address, true]), 'OwnableUnauthorizedAccount');
+        // The implementation has no alternative upgrade entry point for the owner to call.
+        const directUpgrade = await viem.getContractAt('ITransparentUpgradeableProxy', resolver.address, { client: { wallet: owner } });
+        await assert.rejects(directUpgrade.write.upgradeToAndCall([next.address, '0x']));
+        await resolver.write.transferOwnership([stranger.account.address]);
+        assert.equal(getAddress(await proxyAdmin.read.owner()), getAddress(upgradeOwner.account.address));
+        await proxyAdmin.write.transferOwnership([owner.account.address]);
+        assert.equal(getAddress(await resolver.read.owner()), getAddress(stranger.account.address));
+        await expectRevert(proxyAdmin.write.upgradeAndCall([resolver.address, next.address, '0x']), 'OwnableUnauthorizedAccount');
+        await adminAsResolverOwner.write.upgradeAndCall([resolver.address, next.address, '0x']);
+        assert.equal(getAddress(await resolver.read.owner()), getAddress(stranger.account.address));
+    });
+
+    it('lets a governance owner rotate attesters after ProxyAdmin ownership is renounced', async () => {
+        const { owner, stranger, upgradeOwner, proxyAdmin, resolver, eas, request, attest, revoke } = await setup();
+        const next = await viem.deployContract('SanctionsResolverV2UpgradeMock', [eas.address]);
+        const governance = await viem.deployContract('ResolverOwnerMock', [owner.account.address]);
+        await resolver.write.transferOwnership([governance.address]);
+        const uid = await attest('BTC', btc);
+        await proxyAdmin.write.renounceOwnership();
+        assert.equal(await proxyAdmin.read.owner(), zeroAddress);
+        for (const wallet of [owner, stranger, upgradeOwner]) {
+            const connected = await viem.getContractAt('ProxyAdmin', proxyAdmin.address, { client: { wallet } });
+            await expectRevert(connected.write.upgradeAndCall([resolver.address, next.address, '0x']), 'OwnableUnauthorizedAccount');
+            await expectRevert(connected.write.transferOwnership([wallet.account.address]), 'OwnableUnauthorizedAccount');
+        }
+        await governance.write.setAttesterTrust([resolver.address, owner.account.address, false]);
+        await governance.write.setAttesterTrust([resolver.address, stranger.account.address, true]);
+        await expectRevert(eas.write.attest([request('BTC', btc)]), 'InvalidAttestation');
+        await revoke(uid);
+        const publisher = await viem.getContractAt('EAS', eas.address, { client: { wallet: stranger } });
+        await publisher.write.attest([request('BTC', btc)]);
+        assert.equal(await resolver.read.isSanctionedAccount([networkId('BTC'), btc]), true);
+        await governance.write.transferResolverOwnership([resolver.address, stranger.account.address]);
+        assert.equal(getAddress(await resolver.read.owner()), getAddress(stranger.account.address));
+        const ownerAfterTransfer = await viem.getContractAt('SanctionsResolverV2', resolver.address, { client: { wallet: stranger } });
+        await ownerAfterTransfer.write.setAttesterTrust([owner.account.address, true]);
+        await expectRevert(ownerAfterTransfer.write.initialize([stranger.account.address, stranger.account.address]), 'InvalidInitialization');
+        const directUpgrade = await viem.getContractAt('ITransparentUpgradeableProxy', resolver.address, { client: { wallet: stranger } });
+        await assert.rejects(directUpgrade.write.upgradeToAndCall([next.address, '0x']));
+        assert.equal(await proxyAdmin.read.owner(), zeroAddress);
+    });
+
+    it('renouncing resolver ownership does not disable ProxyAdmin upgrades', async () => {
+        const { resolver, proxyAdmin, eas } = await setup();
+        await resolver.write.renounceOwnership();
+        const next = await viem.deployContract('SanctionsResolverV2UpgradeMock', [eas.address]);
+        await proxyAdmin.write.upgradeAndCall([resolver.address, next.address, '0x']);
+        assert.equal(await resolver.read.owner(), zeroAddress);
+    });
+
+    it('retains the EAS-only callback boundary through the proxy', async () => {
+        const { resolver, eas, attest } = await setup();
+        const uid = await attest('BTC', btc);
+        const attestation = await eas.read.getAttestation([uid]);
+        await expectRevert(resolver.write.attest([attestation]), 'AccessDenied');
+        await expectRevert(resolver.write.revoke([attestation]), 'AccessDenied');
+    });
 });

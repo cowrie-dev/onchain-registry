@@ -19,6 +19,10 @@ export type DeploymentRecord = {
   easAddress: string;
   schemaUID?: string;
   creationTxHash?: string;
+  implementation?: string;
+  proxyAdmin?: string;
+  proxyAdminOwner?: string;
+  implementationCreationTxHash?: string;
   deployedAt: string;
 };
 

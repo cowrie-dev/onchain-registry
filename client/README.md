@@ -1,7 +1,8 @@
 # Cowrie sanctions client
 
 TypeScript client for SanctionsResolverV2. The package is prepared for npm publication
-at the V2 launch; it is not published yet. Supply the verified V2 deployment address.
+at the V2 launch; it is not published yet. Supply the verified V2 proxy address. Implementation upgrades keep that address
+and the query ABI stable.
 
 ```ts
 import { lookupSanctions } from '@cowrie/sanctions-client';

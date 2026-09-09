@@ -3,20 +3,21 @@ pragma solidity 0.8.28;
 
 import { SchemaResolver } from "@ethereum-attestation-service/eas-contracts/contracts/resolver/SchemaResolver.sol";
 import { IEAS, Attestation } from "@ethereum-attestation-service/eas-contracts/contracts/IEAS.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @notice OFAC account registry with the original Chainalysis read ABI.
 /// @dev Non-EVM strings must use the published canonical form, or the exact
 ///      source string when OFAC lists a value that cannot be decoded.
-contract SanctionsResolverV2 is SchemaResolver, Ownable {
+contract SanctionsResolverV2 is SchemaResolver, OwnableUpgradeable {
     using EnumerableSet for EnumerableSet.Bytes32Set;
     using EnumerableSet for EnumerableSet.AddressSet;
 
     string public constant SCHEMA = "bytes32 network,string account,string source,string sourceUID,string category,string sourceUrl,bytes32 sourceSha256,uint64 sourcePublishedAt,uint64 designatedAt";
     bytes32 public constant EVM = bytes32("EVM");
-    bytes32 public immutable schemaUID;
+    // Proxy storage: preserve existing fields and append new fields in future implementations.
+    bytes32 public schemaUID;
 
     struct Designation { bytes32 attestationUID; address attester; uint64 attestedAt; }
     mapping(bytes32 => Designation) private _designations;
@@ -32,13 +33,21 @@ contract SanctionsResolverV2 is SchemaResolver, Ownable {
     error UnsupportedNetwork(bytes32 network);
     error InvalidAccount();
 
-    constructor(IEAS eas, address initialOwner, address initialAttester) SchemaResolver(eas) Ownable(initialOwner) {
+    /// @dev EAS is fixed in each implementation; deploy upgrades with the same EAS address.
+    constructor(IEAS eas) SchemaResolver(eas) {
+        _disableInitializers();
+    }
+
+    /// @notice Called atomically by the TransparentUpgradeableProxy constructor.
+    function initialize(address initialOwner, address initialAttester) external initializer {
+        __Ownable_init(initialOwner);
         schemaUID = keccak256(abi.encodePacked(SCHEMA, address(this), true));
         if (initialAttester != address(0)) {
             trustedAttesters[initialAttester] = true;
             emit AttesterTrusted(initialAttester, true);
         }
     }
+
 
     function getEAS() external view returns (address) { return address(_eas); }
     function setAttesterTrust(address attester, bool trusted) external onlyOwner {

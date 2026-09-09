@@ -8,7 +8,7 @@ import { getEASAddresses } from "./utils/eas.js";
 import {
   CREATEX_ADDRESS,
   CREATEX_DEPLOY_CREATE3_ABI,
-  buildResolverInitCode,
+  buildProxyDeployment,
   computeCreate3Address,
   computeGuardedSalt,
 } from "./utils/createx.js";
@@ -67,6 +67,7 @@ async function main() {
     "RESOLVER_INITIAL_OWNER",
   ]);
   const initialOwner: Address = initialOwnerArg ? getAddress(initialOwnerArg) : deployer;
+  const proxyAdminOwner = getAddress(requireOption('--proxy-admin-owner', ['PROXY_ADMIN_OWNER']));
   const initialAttester: Address = getAddress(initialAttesterArg);
 
   const createxOverride = resolveOption("--createx", ["CREATEX"]);
@@ -100,7 +101,8 @@ async function main() {
     );
   }
 
-  const initCode = await buildResolverInitCode({
+  const deployment = await buildProxyDeployment({
+    createx, sender: deployer, salt, proxyAdminOwner,
     eas: easAddress,
     initialOwner,
     initialAttester,
@@ -108,37 +110,20 @@ async function main() {
 
   const predicted = computeCreate3Address({ createx, sender: deployer, salt });
 
-  // Cross-check the CREATE2 + nonce-1 half of our prediction against CreateX's
-  // on-chain `pure` overload.  We compute the guardedSalt in TS (CreateX does
-  // NOT expose `_guard` directly), then ask CreateX for the address it would
-  // produce for that guardedSalt with itself as the CREATE2 deployer.  The
-  // result must match our prediction; if it doesn't, the chain has a non-
-  // canonical CreateX and we should not deploy.
-  //
-  // We deliberately use the 2-arg `pure` overload, NOT the 1-arg overload.
-  // The 1-arg overload `computeCreate3Address(bytes32)` does NOT apply _guard
-  // (it's the raw Solady-style prediction), so it would always disagree with
-  // our TS helper for permissioned salts.
-  const guardedSalt = computeGuardedSalt(deployer, salt);
-  const onChainPrediction = (await publicClient.readContract({
-    address: createx,
-    abi: CREATEX_DEPLOY_CREATE3_ABI,
-    functionName: "computeCreate3Address",
-    args: [guardedSalt, createx],
-  })) as Address;
-  if (getAddress(onChainPrediction) !== predicted) {
-    throw new Error(
-      `Prediction mismatch: TS=${predicted} on-chain=${onChainPrediction}. ` +
-        `Refusing to deploy.`,
-    );
-  }
-
-  const existingCode = await publicClient.getCode({ address: predicted });
-  if (existingCode && existingCode !== "0x") {
-    throw new Error(
-      `Address ${predicted} already has code on this chain. ` +
-        `Either CREATE3 already happened with this salt or the address collides; refusing to redeploy.`,
-    );
+  const transactions = [
+    { purpose: 'Deploy SanctionsResolverV2 implementation', salt: deployment.implementationSalt,
+      address: deployment.implementation, initCode: deployment.implementationInitCode },
+    { purpose: 'Deploy and initialize TransparentUpgradeableProxy', salt, address: predicted, initCode: deployment.proxyInitCode },
+  ];
+  for (const transaction of transactions) {
+    const onChainPrediction = await publicClient.readContract({ address: createx,
+      abi: CREATEX_DEPLOY_CREATE3_ABI, functionName: 'computeCreate3Address',
+      args: [computeGuardedSalt(deployer, transaction.salt), createx] });
+    if (getAddress(onChainPrediction) !== transaction.address) throw new Error('CreateX prediction mismatch');
+    const existingCode = await publicClient.getCode({ address: transaction.address });
+    if (existingCode && existingCode !== '0x') {
+      throw new Error(`Address ${transaction.address} already has code; inspect any partial deployment before continuing.`);
+    }
   }
 
   const header = printCalldata
@@ -155,55 +140,44 @@ async function main() {
   console.log(`  predicted addr  : ${predicted}`);
   console.log("");
 
+  console.log(`  upgrade authority: ${proxyAdminOwner}`);
+  console.log(`  implementation : ${deployment.implementation}`);
   if (printCalldata) {
-    const data = encodeFunctionData({
-      abi: CREATEX_DEPLOY_CREATE3_ABI,
-      functionName: "deployCreate3",
-      args: [salt, initCode],
-    });
-    const outDir = resolve(process.cwd(), "calldata");
+    const outDir = resolve(process.cwd(), 'calldata');
     await mkdir(outDir, { recursive: true });
-    const outPath = resolve(outDir, `${networkName}-${chainId}.hex`);
-    await writeFile(outPath, `${data}\n`, "utf8");
-    console.log(`to              : ${createx}`);
-    console.log(`value           : 0`);
-    console.log(`calldata bytes  : ${(data.length - 2) / 2}`);
-    console.log(`calldata file   : ${outPath}`);
+    const outPath = resolve(outDir, `${networkName}-${chainId}.json`);
+    const prepared = transactions.map(tx => ({ purpose: tx.purpose, from: deployer, to: createx, value: '0',
+      data: encodeFunctionData({ abi: CREATEX_DEPLOY_CREATE3_ABI, functionName: 'deployCreate3', args: [tx.salt, tx.initCode] }) }));
+    await writeFile(outPath, JSON.stringify({ address: predicted, implementation: deployment.implementation, proxyAdmin: deployment.proxyAdmin, proxyAdminOwner, transactions: prepared }, null, 2) + '\n');
+    console.log(`Ordered deployment transactions: ${outPath}`);
     return;
   }
 
-  if (!walletClient) {
-    throw new Error("internal: walletClient missing in broadcast mode");
+  if (!walletClient) throw new Error('Wallet client missing in broadcast mode');
+  const hashes: Hex[] = [];
+  for (const transaction of transactions) {
+    const hash = await walletClient.writeContract({ address: createx, abi: CREATEX_DEPLOY_CREATE3_ABI,
+      functionName: 'deployCreate3', args: [transaction.salt, transaction.initCode] });
+    console.log(`${transaction.purpose}: ${hash}`);
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== 'success') throw new Error(`Deployment reverted: ${hash}`);
+    const code = await publicClient.getCode({ address: transaction.address });
+    if (!code || code === '0x') throw new Error(`No code at ${transaction.address} after ${hash}`);
+    hashes.push(hash);
   }
-  const txHash = await walletClient.writeContract({
-    address: createx,
-    abi: CREATEX_DEPLOY_CREATE3_ABI,
-    functionName: "deployCreate3",
-    args: [salt, initCode],
-  });
-  console.log(`tx: ${txHash}`);
-
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-  if (receipt.status !== "success") {
-    throw new Error(`Deploy tx reverted: ${txHash}`);
-  }
-
-  const codeAfter = await publicClient.getCode({ address: predicted });
-  if (!codeAfter || codeAfter === "0x") {
-    throw new Error(
-      `Tx succeeded but no code at predicted address ${predicted}. ` +
-        `Inspect tx ${txHash} on a block explorer.`,
-    );
-  }
-
-  console.log(`SanctionsResolverV2 deployed to: ${predicted}`);
+  console.log(`SanctionsResolverV2 proxy deployed to: ${predicted}`);
 
   await recordDeployment({
     networkName,
     chainId,
     address: predicted,
+    implementation: deployment.implementation,
+    proxyAdmin: deployment.proxyAdmin,
+    implementationCreationTxHash: hashes[0],
+    creationTxHash: hashes[1],
     deployer,
     owner: initialOwner,
+    proxyAdminOwner,
     initialAttester,
     easAddress,
     salt,
@@ -215,8 +189,13 @@ type DeploymentMetadata = {
   networkName: string;
   chainId: number;
   address: Address;
+  implementation: Address;
+  proxyAdmin: Address;
+  implementationCreationTxHash: Hex;
+  creationTxHash: Hex;
   deployer: Address;
   owner: Address;
+  proxyAdminOwner: Address;
   initialAttester: Address;
   easAddress: Address;
   salt: Hex;
@@ -226,8 +205,13 @@ type DeploymentMetadata = {
 type DeploymentRecord = {
   chainName: string;
   address: string;
+  implementation: string;
+  proxyAdmin: string;
+  implementationCreationTxHash: string;
+  creationTxHash: string;
   deployer: string;
   owner: string;
+  proxyAdminOwner: string;
   initialAttester: string;
   easAddress: string;
   salt?: string;
@@ -253,8 +237,13 @@ async function recordDeployment(metadata: DeploymentMetadata): Promise<void> {
   chainManifest.SanctionsResolverV2 = {
     chainName: metadata.networkName,
     address: metadata.address,
+    implementation: metadata.implementation,
+    proxyAdmin: metadata.proxyAdmin,
+    implementationCreationTxHash: metadata.implementationCreationTxHash,
+    creationTxHash: metadata.creationTxHash,
     deployer: metadata.deployer,
     owner: metadata.owner,
+    proxyAdminOwner: metadata.proxyAdminOwner,
     initialAttester: metadata.initialAttester,
     easAddress: metadata.easAddress,
     salt: metadata.salt,

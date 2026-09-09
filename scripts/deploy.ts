@@ -2,7 +2,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { network } from "hardhat";
-import { type Address, getAddress } from "viem";
+import { type Address, getAddress, getContractAddress } from "viem";
+import { encodeResolverInitialization } from "./utils/createx.js";
 import { getEASAddresses } from "./utils/eas.js";
 import { requireOption, resolveOption } from "./utils/resolver.js";
 
@@ -38,7 +39,9 @@ async function main() {
     "RESOLVER_INITIAL_OWNER",
   ]);
   const initialOwner: Address = initialOwnerArg ? getAddress(initialOwnerArg) : deployer;
+  const proxyAdminOwner = getAddress(requireOption('--proxy-admin-owner', ['PROXY_ADMIN_OWNER']));
 
+  console.log(`Upgrade authority: ${proxyAdminOwner}`);
   console.log(`Deploying SanctionsResolverV2`);
   console.log(`  network        : ${networkName} (chainId ${chainId})`);
   console.log(`  deployer       : ${deployer}`);
@@ -46,20 +49,27 @@ async function main() {
   console.log(`  initial owner  : ${initialOwner}`);
   console.log(`  initial attester: ${initialAttesterArg}`);
 
-  const resolver = await viem.deployContract(
+  const implementation = await viem.deployContract(
     "SanctionsResolverV2",
-    [easAddress, initialOwner, getAddress(initialAttesterArg)],
+    [easAddress],
     { client: { wallet: walletClient } },
   );
 
+  const resolver = await viem.deployContract('TransparentUpgradeableProxy',
+    [implementation.address, proxyAdminOwner, encodeResolverInitialization(initialOwner, getAddress(initialAttesterArg))],
+    { client: { wallet: walletClient } });
+  console.log(`Implementation deployed to: ${implementation.address}`);
   console.log(`SanctionsResolverV2 deployed to: ${resolver.address}`);
 
   await recordDeployment({
     networkName,
     chainId,
     address: resolver.address,
+    implementation: implementation.address,
+    proxyAdmin: getContractAddress({ from: resolver.address, nonce: 1n }),
     deployer,
     owner: initialOwner,
+    proxyAdminOwner,
     initialAttester: initialAttesterArg,
     easAddress,
   });
@@ -69,8 +79,11 @@ type DeploymentMetadata = {
   networkName: string;
   chainId: number;
   address: string;
+  implementation: string;
+  proxyAdmin: string;
   deployer: string;
   owner: string;
+  proxyAdminOwner: string;
   initialAttester: string;
   easAddress: string;
 };
@@ -78,8 +91,11 @@ type DeploymentMetadata = {
 type DeploymentRecord = {
   chainName: string;
   address: string;
+  implementation: string;
+  proxyAdmin: string;
   deployer: string;
   owner: string;
+  proxyAdminOwner: string;
   initialAttester: string;
   easAddress: string;
   schemaUID?: string;
@@ -103,8 +119,11 @@ async function recordDeployment(metadata: DeploymentMetadata): Promise<void> {
   chainManifest.SanctionsResolverV2 = {
     chainName: metadata.networkName,
     address: metadata.address,
+    implementation: metadata.implementation,
+    proxyAdmin: metadata.proxyAdmin,
     deployer: metadata.deployer,
     owner: metadata.owner,
+    proxyAdminOwner: metadata.proxyAdminOwner,
     initialAttester: metadata.initialAttester,
     easAddress: metadata.easAddress,
     deployedAt: new Date().toISOString(),

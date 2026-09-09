@@ -43,7 +43,8 @@
   "dependencies": {
     "@ensdomains/address-encoder": "1.1.4",
     "@ethereum-attestation-service/eas-contracts": "^1.8.0",
-    "@openzeppelin/contracts": "^5.4.0"
+    "@openzeppelin/contracts": "^5.4.0",
+    "@openzeppelin/contracts-upgradeable": "5.4.0"
   },
   "private": true
 }
