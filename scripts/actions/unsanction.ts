@@ -1,21 +1,26 @@
-import { type Hex } from "viem";
+import { isHex, type Hex } from "viem";
 
 import {
   connectViem,
   getEASContract,
   getResolverContract,
   loadResolverDeployment,
-  parseAddressList,
-  requireOption,
   resolveOption,
   resolveWallet,
 } from "../utils/resolver.js";
+import { prepareSanctionsQuery, type SanctionsNetwork } from "../utils/accounts.js";
 import { ZERO_BYTES32 } from "../utils/eas.js";
 
-const accountsArg = requireOption("--accounts", ["ACCOUNTS", "RESOLVER_ACCOUNTS"]);
+const accountsArg = resolveOption("--accounts", ["ACCOUNTS", "RESOLVER_ACCOUNTS"]);
+const keysArg = resolveOption("--keys", ["RESOLVER_KEYS"]);
+const accountNetwork = (resolveOption("--network-id", ["RESOLVER_NETWORK"]) ?? "EVM") as SanctionsNetwork;
 const fromArg = resolveOption("--from", ["FROM"]);
 
-const accounts = parseAddressList(accountsArg, "--accounts");
+if (Boolean(accountsArg) === Boolean(keysArg)) throw new Error('Supply either --accounts or --keys');
+const accounts = [...new Set(keysArg ? keysArg.split(',').map(key => {
+  if (!isHex(key) || key.length !== 66) throw new Error('Expected a bytes32 account key');
+  return key as Hex;
+}) : accountsArg!.split(',').flatMap(account => prepareSanctionsQuery(accountNetwork, account).keys))];
 
 const { viem, chainId } = await connectViem();
 const wallet = await resolveWallet(viem, fromArg);
@@ -33,7 +38,7 @@ const revocations: Array<{ uid: Hex; value: bigint }> = [];
 const skipped: Array<{ account: string; reason: string }> = [];
 const otherAttester: Array<{ account: string; uid: Hex; attester: string }> = [];
 for (const account of accounts) {
-  const designation = await resolver.read.getDesignation([account]);
+  const designation = await resolver.read.getDesignationByKey([account]);
   if (designation.attestationUID.toLowerCase() === ZERO_BYTES32) {
     skipped.push({ account, reason: "no active designation" });
     continue;

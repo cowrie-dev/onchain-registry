@@ -1,147 +1,156 @@
-# Sanctions Resolver
+# SanctionsResolverV2
 
-EAS-backed sanctions resolver.  This contract extends EAS `SchemaResolver` to mirror
-the active sanctioning attestation per address, and exposes a Chainalysis-compatible
-`isSanctioned(address)` interface.
+EAS-backed OFAC oracle for EVM and non-EVM accounts, preserving the exact
+Chainalysis `isSanctioned(address) returns (bool)` ABI. V2 is the replacement
+implementation; its deployment is prepared, not live yet. V1 remains in the
+repository and deployment history but is deprecated for the planned launch.
 
-EAS is the canonical data layer.  Every sanction is an attestation against a
-registered schema; every revocation flows through EAS.  The on-chain mirror stores
-just enough (`attestationUID`, `attester`, `attestedAt`) to answer the binary check
-in one SLOAD.  Rich metadata (source, sourceUrl, sourceSha256, designatedAt, …)
-lives in EAS and is reachable via the UID returned from `getDesignation`.
+Planned CREATE3 proxy address: `0x0FaC8987bc6E6a688082BFD0440DF5d6Ee670FAc`.
+Do not send queries there until deployment and initialization are confirmed.
+See [the deployment plan](deployment-plans/sanctions-v2.json).
 
-Built with Hardhat 3, Solidity 0.8.28, OpenZeppelin Contracts v5, and Viem.
+## Queries
 
-## Setup
+Existing Chainalysis integrations change only the oracle contract address.
+Their ABI, selector (`0xdf592f7d`), argument encoding and boolean response remain
+unchanged. `isSanctioned` is not overloaded. It remains address-wide across EVM
+chains, including through the generalized EVM namespace.
 
-This project uses [1Password CLI](https://developer.1password.com/docs/cli) for
-secure credential management.  The `.env.ref` file contains references to 1Password
-secrets.
+| Method | Result |
+| --- | --- |
+| `isSanctioned(address)` | Chainalysis-compatible EVM membership |
+| `isSanctionedBatch(address[])` | EVM membership in input order |
+| `getDesignation(address)` | EVM active UID, attester and attestation time |
+| `isSanctionedAccount(bytes32,string)` | Canonical or published literal account membership |
+| `accountKey(bytes32,string)` | Key for an account string; normalizes valid EVM hex case |
+| `isSanctionedKey(bytes32)` / `isSanctionedKeyBatch(bytes32[])` | Precomputed-key membership |
+| `getDesignationByKey(bytes32)` | Active UID and attester for any key |
+| `sanctionedCount()` / `sanctionedAddresses()` / `sanctionedRange(offset,limit)` | EVM-only enumeration, preserving V1 meanings |
+| `sanctionedAccountCount()` / `sanctionedKeyRange(offset,limit)` | Complete lookup-key enumeration |
+| `supportsNetwork(bytes32)` | Whether the namespace is recognized |
 
-Required environment variables:
+Network IDs are zero-padded ASCII bytes32: EVM, BTC, BCH, BTG, BSV, LTC, DASH,
+ZEC, XVG, XMR, XRP, TRX, SOL, DOGE and BNB (Beacon Chain). OFAC XBT means BTC.
+USDT/USDC describe assets, not address namespaces. Unknown namespaces revert.
 
-- `PRIVATE_KEY`: Deployer / owner / attester key
+Valid EVM keys hash `abi.encode(bytes32("EVM"), address)`. Other keys hash
+`abi.encode(network, accountString)`. This keeps EVM reads inexpensive and makes
+non-EVM identity network-specific and case-sensitive.
 
-Use `op run --env-file=.env.ref --` to inject referenced credentials at runtime.
-The package scripts are wired up to do this for you.
+The publisher preserves the source spelling and also publishes a canonical
+spelling when its key differs. Undecodable Treasury strings remain exact-match
+entries, including malformed EVM strings. They cannot affect the ABI address
+lookup or EVM enumeration. Keys therefore count queryable spellings, not unique
+accounts. Other alternate encodings require client normalization before RPC or
+onchain lookup. The [npm-ready TypeScript client](client/README.md) handles this,
+returning listed / not-listed / invalid-input and preserving source evidence.
 
-## Initial deployment flow
+## EAS schema and state
 
-```shell
-# 1. Deploy the resolver (writes deployments.json)
-INITIAL_ATTESTER=0x... npm run deploy
-
-# 2. Register the schema against EAS, persists schemaUID alongside the deployment
-npm run register-schema
+```
+bytes32 network,string account,string source,string sourceUID,string category,string sourceUrl,bytes32 sourceSha256,uint64 sourcePublishedAt,uint64 designatedAt
 ```
 
-After `register-schema`, `deployments.json` carries `address`, `easAddress`, and
-`schemaUID` for the deployed network.  Action scripts read these automatically.
+One new revocable schema covers every namespace. For a valid EVM account,
+`recipient` must equal that account; otherwise it must be zero. The resolver
+accepts only this schema, trusted attesters, no expiration, and revocable entries.
+Rich source metadata lives in EAS; the resolver stores the active designation.
+Re-attestation replaces the active UID. Revoking a superseded UID is a no-op;
+revoking the active UID removes that key, without resurrecting older attestations.
+Removing attester trust prevents future additions; it does not erase prior entries.
 
-### Offline / custody-signed flow
+Paginate enumeration at one fixed block because removal changes element order.
+The source publisher lives in cowrie-dev/scraper and uses the verified complete
+OFAC snapshot for additions and removals.
 
-Both `deploy` and `register-schema` accept `PRINT_CALLDATA=1` (or `--print-calldata`)
-to emit the calldata for an external signer (e.g. a custody UI) without broadcasting:
+## Proxy and ownership
 
-```shell
-NETWORK=mainnet PRINT_CALLDATA=1 SALT=0x... INITIAL_ATTESTER=0x... npm run deploy
-NETWORK=mainnet PRINT_CALLDATA=1 npm run register-schema
+V2 uses the unmodified OpenZeppelin 5.4 `TransparentUpgradeableProxy` and its
+constructor-created `ProxyAdmin`. The implementation uses `OwnableUpgradeable`;
+it contains no upgrade functions or upgrade roles.
+
+| Contract | Authority | Responsibilities |
+| --- | --- | --- |
+| Resolver proxy (`owner()`) | Application owner, potentially a DAO | Change trusted attesters and transfer application ownership |
+| `ProxyAdmin` (`owner()`) | Upgrade owner | Upgrade the implementation and transfer or renounce upgrade ownership |
+
+The plan specifies these owners separately. Both initially use the existing Vault
+address; they can be transferred independently. `proxyAdminOwner` is the owner of
+the automatically created `ProxyAdmin`, not a predeployed admin contract address.
+Consumers and EAS use the proxy address. Its constructor calls `initialize(owner,
+initialAttester)` atomically, and the implementation disables initialization on
+itself. The schema UID is computed in proxy context and stored in proxy storage.
+
+The upgrade owner calls `ProxyAdmin.upgradeAndCall(proxy, implementation, data)`.
+Before any upgrade, verify storage compatibility, the EAS address embedded in the
+new implementation, schema identity, and byte-identical legacy query behavior.
+Keep existing storage fields and their types in order; append new fields. If an
+upgrade needs initialization, its callback runs with `msg.sender` equal to
+`ProxyAdmin`, not the resolver owner.
+
+Calling `renounceOwnership()` on **ProxyAdmin** permanently disables its upgrades.
+The resolver owner can still rotate attesters and transfer application ownership.
+Calling that function on the **resolver** instead renounces attester-management
+authority and does not disable ProxyAdmin upgrades. Neither operation is part of
+deployment. The freeze guarantee assumes the installed implementation has no
+alternative mechanism to replace itself; V2 has none.
+
+## Build and prepare deployment
+
 ```
-
-Output is written to `calldata/<network>-<chainId>.hex` (deploy) and
-`calldata/<network>-<chainId>-schema.hex` (schema register).  No wallet/key is
-required in this mode.  After broadcasting via your custody tool, re-run
-`register-schema` (any mode); it will detect the on-chain schema and record
-`schemaUID` in `deployments.json`.
-
-## Resolver management
-
-Action scripts accept arguments via CLI flags or environment variables.
-
-```shell
-# Allowlist management (owner only)
-RESOLVER_ACCOUNTS=0xAttester1,0xAttester2 npm run registry:trust-attester
-RESOLVER_ACCOUNTS=0xAttester1            npm run registry:untrust-attester
-
-# Inspect allowlist (event-derived)
-npm run registry:list-trusted-attesters
-
-# Sanction (bulk EAS attest from JSON file)
-INPUT=./sanctions-batch.json npm run registry:sanction
-
-# Unsanction (revokes active EAS attestation per recipient)
-RESOLVER_ACCOUNTS=0xAddr1,0xAddr2 npm run registry:unsanction
-
-# Read sanctioned status + active designation
-RESOLVER_ACCOUNTS=0xAddr1,0xAddr2 npm run registry:check
-
-# Transfer resolver ownership
-RESOLVER_NEW_OWNER=0xNewOwner npm run registry:transfer-owner
-```
-
-### Sanction batch input format
-
-`registry:sanction` accepts a JSON array.  Each entry maps to one EAS attestation:
-
-```json
-[
-  {
-    "address": "0xRecipient",
-    "source": "OFAC_SDN",
-    "sourceUID": "12345",
-    "category": "INDIVIDUAL",
-    "sourceUrl": "https://www.treasury.gov/ofac/downloads/sanctions/1.0/sdn_advanced.xml",
-    "sourceSha256": "0xdfa44de79ff009b887f2352b22ff2ec214d412c318b67f2243ccfc0a07dbf31b",
-    "sourcePublishedAt": 1746057600,
-    "designatedAt": 1700000000
-  }
-]
-```
-
-All entries are submitted in a single `EAS.multiAttest` call.  The script prints
-the resulting `(recipient, uid)` pairs.
-
-### Environment variables
-
-| Variable               | Description                                        | Used by                |
-| ---------------------- | -------------------------------------------------- | ---------------------- |
-| `INITIAL_ATTESTER`     | Initial trusted attester address                   | `deploy`               |
-| `EAS`                  | Override the EAS contract address (testnets only)  | `deploy`               |
-| `RESOLVER_ACCOUNTS`    | Comma-separated addresses                          | most action scripts    |
-| `RESOLVER_NEW_OWNER`   | New resolver owner                                 | `registry:transfer-owner` |
-| `RESOLVER_INPUT`       | Path to a sanctions JSON batch                     | `registry:sanction`    |
-| `FROM`                 | Signer address (defaults to first account)         | optional               |
-
-## Read interface
-
-The resolver exposes:
-
-| Function                                    | Purpose                              |
-| ------------------------------------------- | ------------------------------------ |
-| `isSanctioned(address) returns (bool)`      | Chainalysis-compatible single check  |
-| `isSanctionedBatch(address[]) returns (bool[])` | Batch check (one bool per input) |
-| `getDesignation(address) returns (Designation)` | Active UID, attester, timestamp |
-| `sanctionedCount() returns (uint256)`       | Total count of currently-sanctioned addresses |
-| `sanctionedAddresses() returns (address[])` | Full set of currently-sanctioned addresses (for off-chain reconciliation) |
-| `sanctionedRange(uint256, uint256) returns (address[])` | Paginated walk of the sanctioned set (offset, limit) |
-| `trustedAttesters(address) returns (bool)`  | Allowlist membership                 |
-| `owner() returns (address)`                 | OZ Ownable                           |
-
-`isSanctionedBatch` is exposed under a distinct Solidity name (rather than as an
-overload of `isSanctioned(address[])`) so client tooling that maps overload sets
-to a single function name (e.g. viem) can invoke each variant unambiguously.
-
-`sanctionedAddresses` returns the entire set in one call.  Cheap enough for OFAC-scale
-lists (hundreds); paginate via `sanctionedRange` if the set ever exceeds your eth_call
-gas cap.  Note that `EnumerableSet` uses swap-and-pop on remove, so insertion order is
-not preserved and indices may shift between pages across mutations.  For reconciliation
-walkers, prefer pulling the whole set in one call.
-
-## Testing
-
-```shell
+PUPPETEER_SKIP_DOWNLOAD=1 npm ci
 npm test
+npx hardhat compile --build-profile production
+npx hardhat run scripts/prepare-v2.ts --build-profile production
 ```
 
-Tests deploy a fresh EAS + SchemaRegistry pair, register the sanctions schema with
-the resolver, and exercise `onAttest` / `onRevoke` end-to-end.
+Run the preparation script with a TypeScript runner that resolves `.js` source
+imports (the Hardhat runner also works: `npx hardhat run scripts/prepare-v2.ts
+--build-profile production`). It produces `calldata/sanctions-v2-1.json` and
+`calldata/sanctions-v2-11155111.json`, each containing three ordered transactions:
+implementation deployment, transparent proxy deployment with atomic initialization,
+and schema registration. Proxy deployment also creates its ProxyAdmin. It makes no RPC calls, signs nothing, and does
+not write deployment records. Resolver owner, ProxyAdmin owner, and initial attester are explicit in the plan.
+
+Before signing, check that both deployment targets and their CREATE3 intermediaries
+are unused on the chosen chain, check CreateX's prediction and EAS/SchemaRegistry addresses, and review the
+compiled transaction bytes. Deploy and register, record only confirmed V2 entries
+in deployments.json (including implementation and ProxyAdmin addresses), then
+populate sanctions from the verified source through Ledger Vault.
+Copy confirmed V2 records into the scraper's curated deployment snapshot before
+switching its scheduled publisher. Keep V1's historical entries; stop updating V1
+only after V2 is populated and verified. Do not empty the old contract.
+
+The existing `deploy`, `deploy:create3`, `register-schema` and `verify:sourcify`
+commands now target V2. Live signing commands retain the repository's 1Password
+wrapper. Set `PROXY_ADMIN_OWNER` explicitly for either live deployment command.
+Default live network is Sepolia. CREATE3 uses a sender-permissioned salt
+without chain-specific protection so both chains get the same address.
+The implementation uses a separate permissioned salt derived from the proxy salt.
+If deployment stops after the implementation transaction, inspect the confirmed
+state and use the remaining prepared transactions; the live script refuses to
+reuse occupied targets.
+
+Verify all three contracts with `VERIFY_TARGET=proxy`, `implementation`, and
+`proxy-admin` using `npm run verify:sourcify`. The proxy and its ProxyAdmin share
+one creation transaction; the implementation has its own. `deploy:create3` records
+both transaction hashes. For a direct deployment or custody broadcast, record the
+confirmed hashes or pass the appropriate `CREATION_TX` to verification.
+
+## Operator commands
+
+- `RESOLVER_NETWORK=BTC RESOLVER_ACCOUNTS=... npm run registry:check`
+- `INPUT=accounts.json npm run registry:sanction` (each entry includes `network` and `address`, plus source evidence)
+- `RESOLVER_NETWORK=BTC RESOLVER_ACCOUNTS=... npm run registry:unsanction` (source and canonical keys)
+- `RESOLVER_KEYS=0x... npm run registry:unsanction` (explicit keys)
+- `npm run registry:list-sanctioned` (all keys at a pinned block)
+
+EVM is the default namespace. Trust-attester, untrust-attester and transfer-owner
+commands retain their existing arguments and now discover V2 deployments.
+
+## Client package
+
+`npm run client:build` compiles `@cowrie/sanctions-client`. Run `npm pack --dry-run`
+from client/ to inspect its publishable files. The repository root is private so
+it cannot accidentally be published as the client. Publication is a separate
+launch step; no npm version has been published by this change.

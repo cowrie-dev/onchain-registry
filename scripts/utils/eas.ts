@@ -7,7 +7,7 @@ import {
 } from "viem";
 
 export const SCHEMA_STRING =
-  "string source,string sourceUID,string category,string sourceUrl,bytes32 sourceSha256,uint64 sourcePublishedAt,uint64 designatedAt";
+  "bytes32 network,string account,string source,string sourceUID,string category,string sourceUrl,bytes32 sourceSha256,uint64 sourcePublishedAt,uint64 designatedAt";
 
 /// EAS canonical contract addresses per chain.  Mainnet only at launch; extend when
 /// new deployments are added.
@@ -46,6 +46,8 @@ export function predictSchemaUID(resolver: Address, revocable: boolean): Hex {
 }
 
 export type DesignationFields = {
+  network: Hex;
+  account: string;
   source: string;
   sourceUID: string;
   category: string;
@@ -58,6 +60,8 @@ export type DesignationFields = {
 export function encodeDesignation(fields: DesignationFields): Hex {
   return encodeAbiParameters(
     [
+      { name: "network", type: "bytes32" },
+      { name: "account", type: "string" },
       { name: "source", type: "string" },
       { name: "sourceUID", type: "string" },
       { name: "category", type: "string" },
@@ -67,6 +71,8 @@ export function encodeDesignation(fields: DesignationFields): Hex {
       { name: "designatedAt", type: "uint64" },
     ],
     [
+      fields.network,
+      fields.account,
       fields.source,
       fields.sourceUID,
       fields.category,

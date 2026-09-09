@@ -19,6 +19,10 @@ export type DeploymentRecord = {
   easAddress: string;
   schemaUID?: string;
   creationTxHash?: string;
+  implementation?: string;
+  proxyAdmin?: string;
+  proxyAdminOwner?: string;
+  implementationCreationTxHash?: string;
   deployedAt: string;
 };
 
@@ -60,13 +64,13 @@ export async function getResolverContract(
   viem: ViemHelpers,
   address: string,
   wallet?: WalletClient,
-): Promise<ContractReturnType<"SanctionsResolver">> {
+): Promise<ContractReturnType<"SanctionsResolverV2">> {
   if (!address) {
     throw new Error("Resolver address is required.");
   }
   return wallet
-    ? viem.getContractAt("SanctionsResolver", getAddress(address), { client: { wallet } })
-    : viem.getContractAt("SanctionsResolver", getAddress(address));
+    ? viem.getContractAt("SanctionsResolverV2", getAddress(address), { client: { wallet } })
+    : viem.getContractAt("SanctionsResolverV2", getAddress(address));
 }
 
 export async function getEASContract(
@@ -102,10 +106,10 @@ export async function loadDeployments(): Promise<DeploymentManifest> {
 
 export async function loadResolverDeployment(chainId: number): Promise<DeploymentRecord> {
   const manifest = await loadDeployments();
-  const record = manifest[String(chainId)]?.SanctionsResolver;
+  const record = manifest[String(chainId)]?.SanctionsResolverV2;
   if (!record) {
     throw new Error(
-      `No SanctionsResolver deployment recorded for chainId ${chainId} in deployments.json.`,
+      `No SanctionsResolverV2 deployment recorded for chainId ${chainId} in deployments.json.`,
     );
   }
   return record;

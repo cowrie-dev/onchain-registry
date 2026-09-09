@@ -3,8 +3,11 @@ import { resolve } from "node:path";
 import {
   concat,
   encodeAbiParameters,
+  encodeFunctionData,
+  parseAbi,
   getAddress,
   getCreate2Address,
+  getContractAddress,
   keccak256,
   pad,
   type Address,
@@ -139,29 +142,45 @@ export function addressMatchesMatching(address: Address, matching: string): bool
   return true;
 }
 
-/// Reads SanctionsResolver creation bytecode from Hardhat's compiled artifact
-/// and concatenates the ABI-encoded constructor args.  This is the byte string
-/// CreateX's CREATE3 proxy will execute as a contract-creation initcode.
+export function encodeResolverInitialization(initialOwner: Address, initialAttester: Address): Hex {
+  return encodeFunctionData({
+    abi: parseAbi(['function initialize(address initialOwner,address initialAttester)']),
+    functionName: 'initialize', args: [initialOwner, initialAttester],
+  });
+}
+
+export async function buildImplementationInitCode(eas: Address): Promise<Hex> {
+  const artifact = JSON.parse(await readFile(resolve(process.cwd(),
+    'artifacts/contracts/SanctionsResolverV2.sol/SanctionsResolverV2.json'), 'utf8')) as { bytecode: Hex };
+  return concat([artifact.bytecode, encodeAbiParameters([{ type: 'address' }], [eas])]);
+}
+
+// The proxy constructor initializes ownership, attester trust and the schema UID atomically.
 export async function buildResolverInitCode(args: {
-  eas: Address;
+  implementation: Address;
   initialOwner: Address;
   initialAttester: Address;
-  artifactPath?: string;
+  proxyAdminOwner: Address;
 }): Promise<Hex> {
-  const path =
-    args.artifactPath ??
-    resolve(
-      process.cwd(),
-      "artifacts/contracts/SanctionsResolver.sol/SanctionsResolver.json",
-    );
-  const artifact = JSON.parse(await readFile(path, "utf8")) as { bytecode: Hex };
-  const encodedArgs = encodeAbiParameters(
-    [
-      { name: "eas", type: "address" },
-      { name: "initialOwner", type: "address" },
-      { name: "initialAttester", type: "address" },
-    ],
-    [args.eas, args.initialOwner, args.initialAttester],
-  );
-  return concat([artifact.bytecode, encodedArgs]);
+  const artifact = JSON.parse(await readFile(resolve(process.cwd(),
+    'artifacts/@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol/TransparentUpgradeableProxy.json'), 'utf8')) as { bytecode: Hex };
+  return concat([artifact.bytecode, encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'bytes' }],
+    [args.implementation, args.proxyAdminOwner, encodeResolverInitialization(args.initialOwner, args.initialAttester)])]);
+}
+
+// Use a separate permissioned salt for the initial implementation. The vanity salt remains the proxy's.
+export async function buildProxyDeployment(args: {
+  createx: Address; sender: Address; salt: Hex; eas: Address; initialOwner: Address; initialAttester: Address; proxyAdminOwner: Address;
+}) {
+  const digest = keccak256(encodeAbiParameters([{ type: 'string' }, { type: 'bytes32' }],
+    ['SanctionsResolverV2 implementation', args.salt]));
+  const implementationSalt = buildPermissionedSalt(args.sender, `0x${digest.slice(2, 24)}`);
+  if (implementationSalt.toLowerCase() === args.salt.toLowerCase()) throw new Error('Implementation salt collision');
+  const implementation = computeCreate3Address({ ...args, salt: implementationSalt });
+  return {
+    implementationSalt, implementation,
+    proxyAdmin: getContractAddress({ from: computeCreate3Address(args), nonce: 1n }),
+    implementationInitCode: await buildImplementationInitCode(args.eas),
+    proxyInitCode: await buildResolverInitCode({ ...args, implementation }),
+  };
 }

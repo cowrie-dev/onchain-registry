@@ -18,7 +18,9 @@ type BuildInfoOutput = {
 };
 
 const SOURCIFY_API = "https://sourcify.dev/server";
-const CONTRACT_NAME = "SanctionsResolver";
+const target = resolveOption('--target', ['VERIFY_TARGET']) ?? 'proxy';
+if (!['proxy', 'implementation', 'proxy-admin'].includes(target)) throw new Error('VERIFY_TARGET must be proxy, implementation or proxy-admin');
+const CONTRACT_NAME = target === 'proxy' ? 'TransparentUpgradeableProxy' : target === 'proxy-admin' ? 'ProxyAdmin' : 'SanctionsResolverV2';
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 180_000;
@@ -27,11 +29,13 @@ const { chainId } = await connectViem();
 const deployment = await loadResolverDeployment(chainId);
 
 const creationTxFromArg = resolveOption("--creation-tx", ["CREATION_TX", "CREATION_TX_HASH"]);
-const creationTxHash = creationTxFromArg ?? deployment.creationTxHash;
+const address = target === 'proxy' ? deployment.address : target === 'proxy-admin' ? deployment.proxyAdmin : deployment.implementation;
+if (!address) throw new Error(`No ${target} address recorded for this deployment`);
+const creationTxHash = creationTxFromArg ?? (target === 'implementation' ? deployment.implementationCreationTxHash : deployment.creationTxHash);
 if (!creationTxHash) {
   throw new Error(
     `Creation tx hash required.  Pass --creation-tx <hash>, set CREATION_TX, ` +
-      `or add "creationTxHash" to deployments.json[${chainId}].SanctionsResolver.`,
+      `or add "creationTxHash" to deployments.json[${chainId}].SanctionsResolverV2.`,
   );
 }
 
@@ -46,13 +50,13 @@ const contractIdentifier = `${buildInfo.sourcePath}:${CONTRACT_NAME}`;
 
 console.log(`Submitting ${contractIdentifier} to Sourcify`);
 console.log(`  chain      : ${chainId}`);
-console.log(`  address    : ${deployment.address}`);
+console.log(`  address    : ${address}`);
 console.log(`  compiler   : ${buildInfo.data.solcLongVersion}`);
 console.log(`  build-info : ${buildInfo.basePath}`);
 console.log(`  creationTx : ${creationTxHash}`);
 
 const submitRes = await fetch(
-  `${SOURCIFY_API}/v2/verify/${chainId}/${deployment.address}`,
+  `${SOURCIFY_API}/v2/verify/${chainId}/${address}`,
   {
     method: "POST",
     headers: { "Content-Type": "application/json" },

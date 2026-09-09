@@ -107,9 +107,9 @@ async function persistSchemaUID(chain: number, uid: `0x${string}`): Promise<void
   const text = await readFile(filePath, "utf8");
   const manifest = JSON.parse(text) as Record<string, Record<string, Record<string, unknown>>>;
   const chainKey = String(chain);
-  if (!manifest[chainKey] || !manifest[chainKey].SanctionsResolver) {
-    throw new Error(`No SanctionsResolver deployment for chainId ${chain}; deploy first.`);
+  if (!manifest[chainKey] || !manifest[chainKey].SanctionsResolverV2) {
+    throw new Error(`No SanctionsResolverV2 deployment for chainId ${chain}; deploy first.`);
   }
-  manifest[chainKey].SanctionsResolver.schemaUID = uid;
+  manifest[chainKey].SanctionsResolverV2.schemaUID = uid;
   await writeFile(filePath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }

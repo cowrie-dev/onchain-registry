@@ -5,6 +5,10 @@ import { HardhatUserConfig, configVariable } from "hardhat/config";
 const config: HardhatUserConfig = {
   plugins: [hardhatToolboxViemPlugin, hardhatVerify],
   solidity: {
+    npmFilesToBuild: [
+      "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol",
+      "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol",
+    ],
     profiles: {
       default: {
         compilers: [{ version: "0.8.28" }, { version: "0.8.27" }],
