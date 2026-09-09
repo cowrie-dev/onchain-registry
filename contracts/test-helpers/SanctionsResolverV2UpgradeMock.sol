@@ -8,8 +8,8 @@ contract SanctionsResolverV2UpgradeMock is SanctionsResolverV2 {
 
     constructor(IEAS eas) SanctionsResolverV2(eas) {}
 
-    // Called atomically through ProxyAdmin.upgradeAndCall in the migration test.
-    function initializeRevision(uint256 value) external reinitializer(2) {
+    // Called atomically through resolver.upgradeToAndCall in the migration test.
+    function initializeRevision(uint256 value) external reinitializer(2) onlyOwner {
         revisionValue = value;
     }
 }

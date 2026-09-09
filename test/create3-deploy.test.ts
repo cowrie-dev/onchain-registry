@@ -11,29 +11,27 @@ let viem: Awaited<ReturnType<typeof network.connect>>['viem'];
 before(async () => { viem = (await network.connect()).viem; });
 
 async function setup() {
-  const [deployer, owner, upgradeOwner] = await viem.getWalletClients();
+  const [deployer, owner] = await viem.getWalletClients();
   const harness = await viem.deployContract('CreateXHarness');
   const { eas } = await deployEAS(viem, deployer);
   const salt = buildPermissionedSalt(deployer.account.address, '0x000102030405060708090a');
   const args = { createx: harness.address, sender: deployer.account.address, salt, eas: eas.address,
-    initialOwner: owner.account.address, initialAttester: owner.account.address, proxyAdminOwner: upgradeOwner.account.address };
-  return { deployer, owner, upgradeOwner, harness, eas, args };
+    initialOwner: owner.account.address, initialAttester: owner.account.address };
+  return { deployer, owner, harness, eas, args };
 }
 
-describe('CREATE3 transparent proxy deployment', () => {
-  it('deploys and initializes the implementation, proxy and independent ProxyAdmin at predicted addresses', async () => {
-    const { owner, upgradeOwner, harness, eas, args } = await setup();
+describe('CREATE3 UUPS proxy deployment', () => {
+  it('deploys implementation and proxy at predicted addresses with a separate owner', async () => {
+    const { deployer, owner, harness, eas, args } = await setup();
     const deployment = await buildProxyDeployment(args);
     const predicted = computeCreate3Address(args);
     assert.equal(getAddress(await harness.read.computeCreate3Address([args.salt, args.sender]) as Address), predicted);
     await harness.write.deployCreate3([deployment.implementationSalt, deployment.implementationInitCode]);
     await harness.write.deployCreate3([args.salt, deployment.proxyInitCode]);
     const resolver = await viem.getContractAt('SanctionsResolverV2', predicted);
-    const admin = await viem.getContractAt('ProxyAdmin', deployment.proxyAdmin);
     assert.equal(getAddress(await resolver.read.owner()), getAddress(owner.account.address));
-    assert.equal(getAddress(await admin.read.owner()), getAddress(upgradeOwner.account.address));
     assert.equal(await resolver.read.trustedAttesters([owner.account.address]), true);
-    assert.equal(await resolver.read.trustedAttesters([upgradeOwner.account.address]), false);
+    assert.equal(await resolver.read.trustedAttesters([deployer.account.address]), false);
     assert.equal(getAddress(await resolver.read.getEAS()), getAddress(eas.address));
     assert.equal(await resolver.read.schemaUID(), predictSchemaUID(predicted, true));
     const implementation = await viem.getContractAt('SanctionsResolverV2', deployment.implementation);
@@ -74,7 +72,7 @@ describe('CREATE3 transparent proxy deployment', () => {
   it('preserves the prepared vanity address and schema UID', () => {
     const plan = JSON.parse(readFileSync('deployment-plans/sanctions-v2.json', 'utf8'));
     const address = computeCreate3Address({ createx: plan.createx, sender: plan.deployer, salt: plan.salt });
-    assert.equal(address, '0x0FaC8987bc6E6a688082BFD0440DF5d6Ee670FAc');
-    assert.equal(predictSchemaUID(address, true), '0x268ffffa825d6264269c9cebe92b7d42bf89dd0a2f41c767baa079dedcd1979d');
+    assert.equal(address, '0x0facD8549aB0666c3c79597f75cd8c75A5520Fac');
+    assert.equal(predictSchemaUID(address, true), '0x5df8c5aff4ab385ec737bd2203688c1c073459d936db9abfe253ef149ec9f0bb');
   });
 });
