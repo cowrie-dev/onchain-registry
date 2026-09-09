@@ -4,13 +4,14 @@ pragma solidity 0.8.28;
 import { SchemaResolver } from "@ethereum-attestation-service/eas-contracts/contracts/resolver/SchemaResolver.sol";
 import { IEAS, Attestation } from "@ethereum-attestation-service/eas-contracts/contracts/IEAS.sol";
 import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @notice OFAC account registry with the original Chainalysis read ABI.
 /// @dev Non-EVM strings must use the published canonical form, or the exact
 ///      source string when OFAC lists a value that cannot be decoded.
-contract SanctionsResolverV2 is SchemaResolver, OwnableUpgradeable {
+contract SanctionsResolverV2 is SchemaResolver, OwnableUpgradeable, UUPSUpgradeable {
     using EnumerableSet for EnumerableSet.Bytes32Set;
     using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -38,9 +39,10 @@ contract SanctionsResolverV2 is SchemaResolver, OwnableUpgradeable {
         _disableInitializers();
     }
 
-    /// @notice Called atomically by the TransparentUpgradeableProxy constructor.
+    /// @notice Called atomically by the ERC1967Proxy constructor.
     function initialize(address initialOwner, address initialAttester) external initializer {
         __Ownable_init(initialOwner);
+        __UUPSUpgradeable_init();
         schemaUID = keccak256(abi.encodePacked(SCHEMA, address(this), true));
         if (initialAttester != address(0)) {
             trustedAttesters[initialAttester] = true;
@@ -48,6 +50,9 @@ contract SanctionsResolverV2 is SchemaResolver, OwnableUpgradeable {
         }
     }
 
+
+    /// @dev A final implementation may override this hook to permanently reject upgrades.
+    function _authorizeUpgrade(address) internal virtual override onlyOwner {}
 
     function getEAS() external view returns (address) { return address(_eas); }
     function setAttesterTrust(address attester, bool trusted) external onlyOwner {

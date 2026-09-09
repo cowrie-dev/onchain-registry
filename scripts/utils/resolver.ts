@@ -20,8 +20,7 @@ export type DeploymentRecord = {
   schemaUID?: string;
   creationTxHash?: string;
   implementation?: string;
-  proxyAdmin?: string;
-  proxyAdminOwner?: string;
+  proxyType?: 'uups';
   implementationCreationTxHash?: string;
   deployedAt: string;
 };

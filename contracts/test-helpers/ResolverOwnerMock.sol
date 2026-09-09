@@ -12,6 +12,10 @@ contract ResolverOwnerMock is Ownable {
         resolver.setAttesterTrust(attester, trusted);
     }
 
+    function upgradeResolver(SanctionsResolverV2 resolver, address implementation) external onlyOwner {
+        resolver.upgradeToAndCall(implementation, "");
+    }
+
     function transferResolverOwnership(SanctionsResolverV2 resolver, address nextOwner) external onlyOwner {
         resolver.transferOwnership(nextOwner);
     }

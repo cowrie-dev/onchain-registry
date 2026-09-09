@@ -7,7 +7,6 @@ import {
   parseAbi,
   getAddress,
   getCreate2Address,
-  getContractAddress,
   keccak256,
   pad,
   type Address,
@@ -160,17 +159,16 @@ export async function buildResolverInitCode(args: {
   implementation: Address;
   initialOwner: Address;
   initialAttester: Address;
-  proxyAdminOwner: Address;
 }): Promise<Hex> {
   const artifact = JSON.parse(await readFile(resolve(process.cwd(),
-    'artifacts/@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol/TransparentUpgradeableProxy.json'), 'utf8')) as { bytecode: Hex };
-  return concat([artifact.bytecode, encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'bytes' }],
-    [args.implementation, args.proxyAdminOwner, encodeResolverInitialization(args.initialOwner, args.initialAttester)])]);
+    'artifacts/@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol/ERC1967Proxy.json'), 'utf8')) as { bytecode: Hex };
+  return concat([artifact.bytecode, encodeAbiParameters([{ type: 'address' }, { type: 'bytes' }],
+    [args.implementation, encodeResolverInitialization(args.initialOwner, args.initialAttester)])]);
 }
 
 // Use a separate permissioned salt for the initial implementation. The vanity salt remains the proxy's.
 export async function buildProxyDeployment(args: {
-  createx: Address; sender: Address; salt: Hex; eas: Address; initialOwner: Address; initialAttester: Address; proxyAdminOwner: Address;
+  createx: Address; sender: Address; salt: Hex; eas: Address; initialOwner: Address; initialAttester: Address;
 }) {
   const digest = keccak256(encodeAbiParameters([{ type: 'string' }, { type: 'bytes32' }],
     ['SanctionsResolverV2 implementation', args.salt]));
@@ -179,7 +177,6 @@ export async function buildProxyDeployment(args: {
   const implementation = computeCreate3Address({ ...args, salt: implementationSalt });
   return {
     implementationSalt, implementation,
-    proxyAdmin: getContractAddress({ from: computeCreate3Address(args), nonce: 1n }),
     implementationInitCode: await buildImplementationInitCode(args.eas),
     proxyInitCode: await buildResolverInitCode({ ...args, implementation }),
   };

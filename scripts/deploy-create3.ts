@@ -67,7 +67,6 @@ async function main() {
     "RESOLVER_INITIAL_OWNER",
   ]);
   const initialOwner: Address = initialOwnerArg ? getAddress(initialOwnerArg) : deployer;
-  const proxyAdminOwner = getAddress(requireOption('--proxy-admin-owner', ['PROXY_ADMIN_OWNER']));
   const initialAttester: Address = getAddress(initialAttesterArg);
 
   const createxOverride = resolveOption("--createx", ["CREATEX"]);
@@ -102,7 +101,7 @@ async function main() {
   }
 
   const deployment = await buildProxyDeployment({
-    createx, sender: deployer, salt, proxyAdminOwner,
+    createx, sender: deployer, salt,
     eas: easAddress,
     initialOwner,
     initialAttester,
@@ -113,7 +112,7 @@ async function main() {
   const transactions = [
     { purpose: 'Deploy SanctionsResolverV2 implementation', salt: deployment.implementationSalt,
       address: deployment.implementation, initCode: deployment.implementationInitCode },
-    { purpose: 'Deploy and initialize TransparentUpgradeableProxy', salt, address: predicted, initCode: deployment.proxyInitCode },
+    { purpose: 'Deploy and initialize ERC1967Proxy', salt, address: predicted, initCode: deployment.proxyInitCode },
   ];
   for (const transaction of transactions) {
     const onChainPrediction = await publicClient.readContract({ address: createx,
@@ -140,7 +139,6 @@ async function main() {
   console.log(`  predicted addr  : ${predicted}`);
   console.log("");
 
-  console.log(`  upgrade authority: ${proxyAdminOwner}`);
   console.log(`  implementation : ${deployment.implementation}`);
   if (printCalldata) {
     const outDir = resolve(process.cwd(), 'calldata');
@@ -148,7 +146,7 @@ async function main() {
     const outPath = resolve(outDir, `${networkName}-${chainId}.json`);
     const prepared = transactions.map(tx => ({ purpose: tx.purpose, from: deployer, to: createx, value: '0',
       data: encodeFunctionData({ abi: CREATEX_DEPLOY_CREATE3_ABI, functionName: 'deployCreate3', args: [tx.salt, tx.initCode] }) }));
-    await writeFile(outPath, JSON.stringify({ address: predicted, implementation: deployment.implementation, proxyAdmin: deployment.proxyAdmin, proxyAdminOwner, transactions: prepared }, null, 2) + '\n');
+    await writeFile(outPath, JSON.stringify({ address: predicted, implementation: deployment.implementation, proxyType: 'uups', transactions: prepared }, null, 2) + '\n');
     console.log(`Ordered deployment transactions: ${outPath}`);
     return;
   }
@@ -172,12 +170,10 @@ async function main() {
     chainId,
     address: predicted,
     implementation: deployment.implementation,
-    proxyAdmin: deployment.proxyAdmin,
     implementationCreationTxHash: hashes[0],
     creationTxHash: hashes[1],
     deployer,
     owner: initialOwner,
-    proxyAdminOwner,
     initialAttester,
     easAddress,
     salt,
@@ -190,12 +186,10 @@ type DeploymentMetadata = {
   chainId: number;
   address: Address;
   implementation: Address;
-  proxyAdmin: Address;
   implementationCreationTxHash: Hex;
   creationTxHash: Hex;
   deployer: Address;
   owner: Address;
-  proxyAdminOwner: Address;
   initialAttester: Address;
   easAddress: Address;
   salt: Hex;
@@ -206,12 +200,11 @@ type DeploymentRecord = {
   chainName: string;
   address: string;
   implementation: string;
-  proxyAdmin: string;
+  proxyType?: 'uups';
   implementationCreationTxHash: string;
   creationTxHash: string;
   deployer: string;
   owner: string;
-  proxyAdminOwner: string;
   initialAttester: string;
   easAddress: string;
   salt?: string;
@@ -238,12 +231,11 @@ async function recordDeployment(metadata: DeploymentMetadata): Promise<void> {
     chainName: metadata.networkName,
     address: metadata.address,
     implementation: metadata.implementation,
-    proxyAdmin: metadata.proxyAdmin,
+    proxyType: 'uups',
     implementationCreationTxHash: metadata.implementationCreationTxHash,
     creationTxHash: metadata.creationTxHash,
     deployer: metadata.deployer,
     owner: metadata.owner,
-    proxyAdminOwner: metadata.proxyAdminOwner,
     initialAttester: metadata.initialAttester,
     easAddress: metadata.easAddress,
     salt: metadata.salt,

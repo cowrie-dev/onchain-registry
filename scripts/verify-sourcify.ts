@@ -19,8 +19,8 @@ type BuildInfoOutput = {
 
 const SOURCIFY_API = "https://sourcify.dev/server";
 const target = resolveOption('--target', ['VERIFY_TARGET']) ?? 'proxy';
-if (!['proxy', 'implementation', 'proxy-admin'].includes(target)) throw new Error('VERIFY_TARGET must be proxy, implementation or proxy-admin');
-const CONTRACT_NAME = target === 'proxy' ? 'TransparentUpgradeableProxy' : target === 'proxy-admin' ? 'ProxyAdmin' : 'SanctionsResolverV2';
+if (!['proxy', 'implementation'].includes(target)) throw new Error('VERIFY_TARGET must be proxy or implementation');
+const CONTRACT_NAME = target === 'proxy' ? 'ERC1967Proxy' : 'SanctionsResolverV2';
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 180_000;
@@ -29,7 +29,7 @@ const { chainId } = await connectViem();
 const deployment = await loadResolverDeployment(chainId);
 
 const creationTxFromArg = resolveOption("--creation-tx", ["CREATION_TX", "CREATION_TX_HASH"]);
-const address = target === 'proxy' ? deployment.address : target === 'proxy-admin' ? deployment.proxyAdmin : deployment.implementation;
+const address = target === 'proxy' ? deployment.address : deployment.implementation;
 if (!address) throw new Error(`No ${target} address recorded for this deployment`);
 const creationTxHash = creationTxFromArg ?? (target === 'implementation' ? deployment.implementationCreationTxHash : deployment.creationTxHash);
 if (!creationTxHash) {

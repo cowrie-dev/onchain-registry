@@ -5,7 +5,7 @@ Chainalysis `isSanctioned(address) returns (bool)` ABI. V2 is the replacement
 implementation; its deployment is prepared, not live yet. V1 remains in the
 repository and deployment history but is deprecated for the planned launch.
 
-Planned CREATE3 proxy address: `0x0FaC8987bc6E6a688082BFD0440DF5d6Ee670FAc`.
+Planned CREATE3 proxy address: `0x0facD8549aB0666c3c79597f75cd8c75A5520Fac`.
 Do not send queries there until deployment and initialization are confirmed.
 See [the deployment plan](deployment-plans/sanctions-v2.json).
 
@@ -65,35 +65,34 @@ OFAC snapshot for additions and removals.
 
 ## Proxy and ownership
 
-V2 uses the unmodified OpenZeppelin 5.4 `TransparentUpgradeableProxy` and its
-constructor-created `ProxyAdmin`. The implementation uses `OwnableUpgradeable`;
-it contains no upgrade functions or upgrade roles.
+V2 uses the unmodified OpenZeppelin 5.4 `ERC1967Proxy`. The implementation inherits
+`UUPSUpgradeable` and `OwnableUpgradeable`. There is no ProxyAdmin contract.
+Consumers and EAS use the proxy address. Its constructor calls
+`initialize(owner, initialAttester)` atomically; the implementation disables
+initialization on itself. The schema UID is computed in proxy context and stored
+in proxy storage.
 
-| Contract | Authority | Responsibilities |
-| --- | --- | --- |
-| Resolver proxy (`owner()`) | Application owner, potentially a DAO | Change trusted attesters and transfer application ownership |
-| `ProxyAdmin` (`owner()`) | Upgrade owner | Upgrade the implementation and transfer or renounce upgrade ownership |
+The resolver owner controls both trusted attesters and implementation upgrades.
+The owner calls `upgradeToAndCall(implementation, data)` on the resolver proxy;
+`_authorizeUpgrade` requires `onlyOwner`. A replacement implementation must retain
+UUPS compatibility. Before any upgrade, verify storage compatibility, the EAS
+address embedded in the new implementation, schema identity, and byte-identical
+legacy query behavior. Preserve existing storage fields and their types. An atomic
+upgrade callback runs with the original caller as `msg.sender`.
 
-The plan specifies these owners separately. Both initially use the existing Vault
-address; they can be transferred independently. `proxyAdminOwner` is the owner of
-the automatically created `ProxyAdmin`, not a predeployed admin contract address.
-Consumers and EAS use the proxy address. Its constructor calls `initialize(owner,
-initialAttester)` atomically, and the implementation disables initialization on
-itself. The schema UID is computed in proxy context and stored in proxy storage.
+To permanently disable upgrades while retaining attester administration, deploy a
+storage-compatible final implementation whose `_authorizeUpgrade` always reverts,
+then upgrade to it. Verify that it has no other implementation-changing mechanism.
+The tests demonstrate that freezing this way preserves sanctions and lets a
+governance owner rotate attesters and transfer ownership. This is a future option;
+the initial deployment remains upgradeable. Renouncing ownership on the initial
+implementation would disable both upgrades and attester management, so it is not
+the procedure for freezing upgrades while retaining an administrator.
 
-The upgrade owner calls `ProxyAdmin.upgradeAndCall(proxy, implementation, data)`.
-Before any upgrade, verify storage compatibility, the EAS address embedded in the
-new implementation, schema identity, and byte-identical legacy query behavior.
-Keep existing storage fields and their types in order; append new fields. If an
-upgrade needs initialization, its callback runs with `msg.sender` equal to
-`ProxyAdmin`, not the resolver owner.
-
-Calling `renounceOwnership()` on **ProxyAdmin** permanently disables its upgrades.
-The resolver owner can still rotate attesters and transfer application ownership.
-Calling that function on the **resolver** instead renounces attester-management
-authority and does not disable ProxyAdmin upgrades. Neither operation is part of
-deployment. The freeze guarantee assumes the installed implementation has no
-alternative mechanism to replace itself; V2 has none.
+The deployment key and resolver owner are separate. The launch uses the 1Password
+key for `0xcC5DcD1aBDf65366DdEd3B9a59513CaB822F1c3E` to deploy and register the schema.
+The Vault account `0x8035B1a1cC4257B96e85E3924221bbCBb2Ed2a69` is the initial resolver
+owner and trusted attester. The deployer receives no resolver authority.
 
 ## Build and prepare deployment
 
@@ -108,22 +107,27 @@ Run the preparation script with a TypeScript runner that resolves `.js` source
 imports (the Hardhat runner also works: `npx hardhat run scripts/prepare-v2.ts
 --build-profile production`). It produces `calldata/sanctions-v2-1.json` and
 `calldata/sanctions-v2-11155111.json`, each containing three ordered transactions:
-implementation deployment, transparent proxy deployment with atomic initialization,
-and schema registration. Proxy deployment also creates its ProxyAdmin. It makes no RPC calls, signs nothing, and does
-not write deployment records. Resolver owner, ProxyAdmin owner, and initial attester are explicit in the plan.
+implementation deployment, UUPS proxy deployment with atomic initialization,
+and schema registration. Preparation makes no RPC calls, signs nothing, and does
+not write deployment records. Deployer, resolver owner and initial attester are
+explicit in the plan.
 
 Before signing, check that both deployment targets and their CREATE3 intermediaries
 are unused on the chosen chain, check CreateX's prediction and EAS/SchemaRegistry addresses, and review the
 compiled transaction bytes. Deploy and register, record only confirmed V2 entries
-in deployments.json (including implementation and ProxyAdmin addresses), then
+in deployments.json (including the implementation address), then
 populate sanctions from the verified source through Ledger Vault.
 Copy confirmed V2 records into the scraper's curated deployment snapshot before
 switching its scheduled publisher. Keep V1's historical entries; stop updating V1
 only after V2 is populated and verified. Do not empty the old contract.
 
 The existing `deploy`, `deploy:create3`, `register-schema` and `verify:sourcify`
-commands now target V2. Live signing commands retain the repository's 1Password
-wrapper. Set `PROXY_ADMIN_OWNER` explicitly for either live deployment command.
+commands now target V2. Live signing commands use the repository's 1Password
+wrapper. `.env.ref` resolves `PRIVATE_KEY` from
+`op://ofac onchain/ETH Keys/PK-0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e`.
+Supply `INITIAL_OWNER` and `INITIAL_ATTESTER` as the Vault address and `SALT` from
+the deployment plan. For CREATE3 broadcasting, explicitly pass `--network mainnet`
+or `--network sepolia` and `--build-profile production` to `npm run deploy:create3 --`.
 Default live network is Sepolia. CREATE3 uses a sender-permissioned salt
 without chain-specific protection so both chains get the same address.
 The implementation uses a separate permissioned salt derived from the proxy salt.
@@ -131,11 +135,18 @@ If deployment stops after the implementation transaction, inspect the confirmed
 state and use the remaining prepared transactions; the live script refuses to
 reuse occupied targets.
 
-Verify all three contracts with `VERIFY_TARGET=proxy`, `implementation`, and
-`proxy-admin` using `npm run verify:sourcify`. The proxy and its ProxyAdmin share
-one creation transaction; the implementation has its own. `deploy:create3` records
+Verify both contracts with `VERIFY_TARGET=proxy` and `VERIFY_TARGET=implementation`
+using `npm run verify:sourcify`. Each has its own creation transaction. `deploy:create3` records
 both transaction hashes. For a direct deployment or custody broadcast, record the
 confirmed hashes or pass the appropriate `CREATION_TX` to verification.
+
+
+The single mainnet Vault whitelist amendment retains the existing EAS entry and
+adds the historical V1 resolver and the final V2 proxy address together. Preserve
+the separate ENS whitelist. Deployment and schema registration use the 1Password
+key, so CreateX and SchemaRegistry need no Vault whitelist entries. UUPS upgrades
+and attester management both target the V2 proxy; implementations do not need
+separate entries. Confirm the final vanity address before submitting the amendment.
 
 ## Operator commands
 
