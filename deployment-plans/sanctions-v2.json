@@ -1,6 +1,6 @@
 {
   "contract": "SanctionsResolverV2",
-  "status": "prepared-not-deployed",
+  "status": "mainnet-deployed-awaiting-population",
   "address": "0x0facD8549aB0666c3c79597f75cd8c75A5520Fac",
   "salt": "0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e00b8e4f8e0a59d67017d689d",
   "deployer": "0xcC5DcD1aBDf65366DdEd3B9a59513CaB822F1c3E",
@@ -12,5 +12,8 @@
     11155111
   ],
   "supersedes": "0x0fac5384c9fCF9e2495EE5B4ea97416257e30fAC",
-  "proxyType": "uups"
+  "proxyType": "uups",
+  "deployedChains": [
+    1
+  ]
 }

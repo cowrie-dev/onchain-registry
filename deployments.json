@@ -21,6 +21,24 @@
       "createxAddress": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
       "deployedAt": "2026-05-05T00:00:00.000Z",
       "schemaUID": "0xa644034a40c9ed8025a75bca841f8d8a85a12a0297f89b1829a23de6f41006cc"
+    },
+    "SanctionsResolverV2": {
+      "chainName": "mainnet",
+      "address": "0x0facD8549aB0666c3c79597f75cd8c75A5520Fac",
+      "proxyType": "uups",
+      "implementation": "0xbb67330A93384c85836750819a3bD037bdBD2ba9",
+      "implementationCreationTxHash": "0xf9c8ca139eefc5c1d9efb4126e766ff05a37caf61142b5b5109b330dfb6b8986",
+      "creationTxHash": "0x832bccea8135431ed92ab5a6af00ef93f97e3a7321f38a617b0764684176aa83",
+      "schemaRegistrationTxHash": "0x5a7f591e5a7c11dbca763bc55cfc80bcd8a8ce78710ff1c42d4306e814bbf8b1",
+      "deployer": "0xcC5DcD1aBDf65366DdEd3B9a59513CaB822F1c3E",
+      "owner": "0x8035B1a1cC4257B96e85E3924221bbCBb2Ed2a69",
+      "initialAttester": "0x8035B1a1cC4257B96e85E3924221bbCBb2Ed2a69",
+      "easAddress": "0xA1207F3BBa224E2c9c3c6D5aF63D0eb1582Ce587",
+      "schemaUID": "0x5df8c5aff4ab385ec737bd2203688c1c073459d936db9abfe253ef149ec9f0bb",
+      "salt": "0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e00b8e4f8e0a59d67017d689d",
+      "implementationSalt": "0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e00a496b80a6a56278cdb4105",
+      "createxAddress": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+      "deployedAt": "2026-09-09T07:02:23.000Z"
     }
   },
   "360": {

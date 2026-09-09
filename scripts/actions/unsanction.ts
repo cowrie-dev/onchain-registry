@@ -1,3 +1,4 @@
+import { publicationSchemaUID } from '../../client/src/publications.js';
 import { isHex, type Hex } from "viem";
 
 import {
@@ -23,8 +24,12 @@ const accounts = [...new Set(keysArg ? keysArg.split(',').map(key => {
 }) : accountsArg!.split(',').flatMap(account => prepareSanctionsQuery(accountNetwork, account).keys))];
 
 const { viem, chainId } = await connectViem();
-const wallet = await resolveWallet(viem, fromArg);
 const deployment = await loadResolverDeployment(chainId);
+const currentResolver = await viem.getContractAt('SanctionsResolverV2', deployment.address as `0x${string}`);
+if (await currentResolver.read.schemaUID() === publicationSchemaUID(deployment.address as `0x${string}`)) {
+  throw new Error('This legacy action cannot change publication records. Submit additions/removals through the publication publisher; see docs/publication-design.md.');
+}
+const wallet = await resolveWallet(viem, fromArg);
 if (!deployment.schemaUID) {
   throw new Error(
     `No schemaUID recorded for chainId ${chainId}.  Run scripts/register-schema.ts first.`,

@@ -1,12 +1,12 @@
 # SanctionsResolverV2
 
 EAS-backed OFAC oracle for EVM and non-EVM accounts, preserving the exact
-Chainalysis `isSanctioned(address) returns (bool)` ABI. V2 is the replacement
-implementation; its deployment is prepared, not live yet. V1 remains in the
-repository and deployment history but is deprecated for the planned launch.
+Chainalysis `isSanctioned(address) returns (bool)` ABI. V2 is deployed on Ethereum mainnet. Initial sanctions loading is still pending;
+do not use it for screening until population and the source comparison are complete.
+V1 remains in the repository and deployment history.
 
-Planned CREATE3 proxy address: `0x0facD8549aB0666c3c79597f75cd8c75A5520Fac`.
-Do not send queries there until deployment and initialization are confirmed.
+Mainnet CREATE3 proxy address: `0x0facD8549aB0666c3c79597f75cd8c75A5520Fac`.
+The proxy, owner, trusted attester and schema have been verified onchain.
 See [the deployment plan](deployment-plans/sanctions-v2.json).
 
 ## Queries
@@ -45,23 +45,39 @@ accounts. Other alternate encodings require client normalization before RPC or
 onchain lookup. The [npm-ready TypeScript client](client/README.md) handles this,
 returning listed / not-listed / invalid-input and preserving source evidence.
 
-## EAS schema and state
+## Publication records and state
 
-```
-bytes32 network,string account,string source,string sourceUID,string category,string sourceUrl,bytes32 sourceSha256,uint64 sourcePublishedAt,uint64 designatedAt
-```
+The next implementation, `SanctionsPublicationResolver`, upgrades the existing
+empty V2 proxy in place. It retains the Chainalysis query ABI and adds readable
+publication records. The currently confirmed deployment record still describes
+the original implementation; publication support is not yet activated on mainnet.
 
-One new revocable schema covers every namespace. For a valid EVM account,
-`recipient` must equal that account; otherwise it must be zero. The resolver
-accepts only this schema, trusted attesters, no expiration, and revocable entries.
-Rich source metadata lives in EAS; the resolver stores the active designation.
-Re-attestation replaces the active UID. Revoking a superseded UID is a no-op;
-revoking the active UID removes that key, without resurrecting older attestations.
-Removing attester trust prevents future additions; it does not erase prior entries.
+Each changed source publication is a non-revocable EAS observation containing
+`string[]` account additions and removals. All networks, including EVM, use the
+same readable encoding. A shared entity table avoids repeating source IDs,
+categories, network names and designation dates for each account. The schema is
+exported as `PUBLICATION_SCHEMA` by the client; see
+[the publication design](docs/publication-design.md) for its fields and semantics.
 
-Paginate enumeration at one fixed block because removal changes element order.
-The source publisher lives in cowrie-dev/scraper and uses the verified complete
-OFAC snapshot for additions and removals.
+Removal is an explicit change in a later publication. Any currently trusted
+attester can submit it, including a successor operator. Historical EAS records
+remain intact. Removing attester trust prevents future writes without erasing
+prior entries. `getAccountByKey` returns the active account and network as strings.
+`getPublicationChunk` returns the decoded arrays from EAS.
+
+`latestPublication` identifies the last completed publication. `pendingPublication`
+identifies a partially applied one. Large loads apply incrementally across chunks;
+ordinary updates generally fit in one attestation and one transaction. Several
+chunks or publications may share one `multiAttest`. Only completion emits
+`PublicationCompleted`; its key counts include canonical and source spellings.
+Bootstrap records (kind 0) and corrections (kind 2) can be excluded when counting
+observed Treasury changes (kind 1).
+
+Unchanged publications are archived offchain and require no transaction or
+hardware approval. The publisher retains original Treasury bytes, parsed
+snapshots and prepared plans in public storage so it can resume interrupted work.
+It cannot reconstruct publications it never downloaded. Paginate enumeration at
+one fixed block because removal changes element order.
 
 ## Proxy and ownership
 
@@ -94,74 +110,42 @@ key for `0xcC5DcD1aBDf65366DdEd3B9a59513CaB822F1c3E` to deploy and register the 
 The Vault account `0x8035B1a1cC4257B96e85E3924221bbCBb2Ed2a69` is the initial resolver
 owner and trusted attester. The deployer receives no resolver authority.
 
-## Build and prepare deployment
+## Build and prepare the publication upgrade
 
-```
+```sh
 PUPPETEER_SKIP_DOWNLOAD=1 npm ci
 npm test
 npx hardhat compile --build-profile production
-npx hardhat run scripts/prepare-v2.ts --build-profile production
+npx hardhat run scripts/prepare-publication-upgrade.ts --build-profile production
 ```
 
-Run the preparation script with a TypeScript runner that resolves `.js` source
-imports (the Hardhat runner also works: `npx hardhat run scripts/prepare-v2.ts
---build-profile production`). It produces `calldata/sanctions-v2-1.json` and
-`calldata/sanctions-v2-11155111.json`, each containing three ordered transactions:
-implementation deployment, UUPS proxy deployment with atomic initialization,
-and schema registration. Preparation makes no RPC calls, signs nothing, and does
-not write deployment records. Deployer, resolver owner and initial attester are
-explicit in the plan.
+The preparation script reads mainnet, verifies the current implementation, EAS,
+owner, attester and empty registry, and writes `calldata/publication-upgrade-1.json`.
+It signs nothing. It predicts the new implementation from the deployment EOA's
+pending nonce: deploy the implementation first, then register the new schema.
+Recheck the nonce if that EOA sends another transaction.
 
-Before signing, check that both deployment targets and their CREATE3 intermediaries
-are unused on the chosen chain, check CreateX's prediction and EAS/SchemaRegistry addresses, and review the
-compiled transaction bytes. Deploy and register, record only confirmed V2 entries
-in deployments.json (including the implementation address), then
-populate sanctions from the verified source through Ledger Vault.
-Copy confirmed V2 records into the scraper's curated deployment snapshot before
-switching its scheduled publisher. Keep V1's historical entries; stop updating V1
-only after V2 is populated and verified. Do not empty the old contract.
+The Vault owner then calls `upgradeToAndCall(newImplementation,
+initializePublications())` atomically. Activation refuses a populated registry and
+preserves owner and attester trust. Record the new implementation and schema UID
+only after a successful receipt and post-upgrade checks. Copy those confirmed
+records into the publisher repository before cutover.
 
-The existing `deploy`, `deploy:create3`, `register-schema` and `verify:sourcify`
-commands now target V2. Live signing commands use the repository's 1Password
-wrapper. `.env.ref` resolves `PRIVATE_KEY` from
-`op://ofac onchain/ETH Keys/PK-0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e`.
-Supply `INITIAL_OWNER` and `INITIAL_ATTESTER` as the Vault address and `SALT` from
-the deployment plan. For CREATE3 broadcasting, explicitly pass `--network mainnet`
-or `--network sepolia` and `--build-profile production` to `npm run deploy:create3 --`.
-Default live network is Sepolia. CREATE3 uses a sender-permissioned salt
-without chain-specific protection so both chains get the same address.
-The implementation uses a separate permissioned salt derived from the proxy salt.
-If deployment stops after the implementation transaction, inspect the confirmed
-state and use the remaining prepared transactions; the live script refuses to
-reuse occupied targets.
+Only V1 and the existing V2 proxy need adding to the Vault whitelist, in one
+amendment retaining EAS and ENS. Implementation deployment and schema registration
+use the deployment EOA; no new whitelist destination is needed for them.
 
-Verify both contracts with `VERIFY_TARGET=proxy` and `VERIFY_TARGET=implementation`
-using `npm run verify:sourcify`. Each has its own creation transaction. `deploy:create3` records
-both transaction hashes. For a direct deployment or custody broadcast, record the
-confirmed hashes or pass the appropriate `CREATION_TX` to verification.
+The publisher in cowrie-dev/scraper owns archive setup, source reconciliation,
+hardware proposals and bootstrap recovery; its `docs/sanctions-resolver-v2.md`
+is the cutover runbook. The old `registry:sanction` and `registry:unsanction`
+commands apply only to the original per-key schema and refuse an activated
+publication resolver. Use the publication publisher for additions and removals.
 
+Measured against the September 8 source (998 lookup keys), the readable publication
+bootstrap used 265,481,864 gas in 34 EAS chunks grouped into 29 transactions with
+20% gas headroom. That is about 63% less than the previous 725,605,331-gas estimate.
+Dollar cost depends on gas price and ETH price. Later small changes generally
+require one transaction; the initial load is the exceptional large operation.
 
-The single mainnet Vault whitelist amendment retains the existing EAS entry and
-adds the historical V1 resolver and the final V2 proxy address together. Preserve
-the separate ENS whitelist. Deployment and schema registration use the 1Password
-key, so CreateX and SchemaRegistry need no Vault whitelist entries. UUPS upgrades
-and attester management both target the V2 proxy; implementations do not need
-separate entries. Confirm the final vanity address before submitting the amendment.
-
-## Operator commands
-
-- `RESOLVER_NETWORK=BTC RESOLVER_ACCOUNTS=... npm run registry:check`
-- `INPUT=accounts.json npm run registry:sanction` (each entry includes `network` and `address`, plus source evidence)
-- `RESOLVER_NETWORK=BTC RESOLVER_ACCOUNTS=... npm run registry:unsanction` (source and canonical keys)
-- `RESOLVER_KEYS=0x... npm run registry:unsanction` (explicit keys)
-- `npm run registry:list-sanctioned` (all keys at a pinned block)
-
-EVM is the default namespace. Trust-attester, untrust-attester and transfer-owner
-commands retain their existing arguments and now discover V2 deployments.
-
-## Client package
-
-`npm run client:build` compiles `@cowrie/sanctions-client`. Run `npm pack --dry-run`
-from client/ to inspect its publishable files. The repository root is private so
-it cannot accidentally be published as the client. Publication is a separate
-launch step; no npm version has been published by this change.
+The [public communication draft](docs/ofacts.md) explains the motivation for EAS.
+The client package is prepared for npm publication after activation and population.
