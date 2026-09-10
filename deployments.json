@@ -38,7 +38,37 @@
       "salt": "0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e00b8e4f8e0a59d67017d689d",
       "implementationSalt": "0xcc5dcd1abdf65366dded3b9a59513cab822f1c3e00a496b80a6a56278cdb4105",
       "createxAddress": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
-      "deployedAt": "2026-09-09T07:02:23.000Z"
+      "deployedAt": "2026-09-09T07:02:23.000Z",
+      "pendingUpgrade": {
+        "status": "deployed-and-registered-awaiting-owner-upgrade",
+        "sourceCommit": "f3d57dca17743d36b22cc4266b141566b5fb9e79",
+        "implementation": "0x67b81B68e78e2f801f06E78c0b127db8E86F1b5E",
+        "implementationCreationTxHash": "0xc736315240d1f2210816d4eaee693ab9ae443939ffe954752c4813dc0e875d1c",
+        "implementationCreationBlock": 25945352,
+        "implementationDeployedAt": "2026-09-10T06:59:23.000Z",
+        "runtimeCodeHash": "0x064b1c040de3cbf744f1feba40a8bdbbb1c84c8596ac5c29ba67ef2aff86309f",
+        "schemaRegistry": "0xA7b39296258348C78294F95B872b282326A97BDF",
+        "schemaUID": "0x690321cff187dd1a500afc761b4a1af7364d593bfe99b31fdd38bd4ab10d2b5a",
+        "schemaRevocable": false,
+        "schemaRegistrationTxHash": "0x5c68cedc4b928831ac1c067018c178423f422ee15cc80f64fcb146ab9d865f8b",
+        "schemaRegistrationBlock": 25945354,
+        "totalFeesWei": "260892184274100",
+        "ownerUpgrade": {
+          "to": "0x0facD8549aB0666c3c79597f75cd8c75A5520Fac",
+          "data": "0x4f1ef28600000000000000000000000067b81b68e78e2f801f06e78c0b127db8e86f1b5e000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000042f05a2dd00000000000000000000000000000000000000000000000000000000"
+        },
+        "sourceVerification": {
+          "service": "Sourcify",
+          "verificationId": "6f6e5403-1f2e-4f7a-94ce-791f34acbdca",
+          "match": "exact_match",
+          "creationMatch": "exact_match",
+          "runtimeMatch": "exact_match",
+          "chainId": "1",
+          "address": "0x67b81B68e78e2f801f06E78c0b127db8E86F1b5E",
+          "verifiedAt": "2026-09-10T07:01:22Z",
+          "matchId": "48479508"
+        }
+      }
     }
   },
   "360": {
