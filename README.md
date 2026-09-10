@@ -49,8 +49,11 @@ returning listed / not-listed / invalid-input and preserving source evidence.
 
 The next implementation, `SanctionsPublicationResolver`, upgrades the existing
 empty V2 proxy in place. It retains the Chainalysis query ABI and adds readable
-publication records. The currently confirmed deployment record still describes
-the original implementation; publication support is not yet activated on mainnet.
+publication records. The active deployment record still describes
+the original proxy implementation; publication support is not yet activated on mainnet.
+The candidate implementation and non-revocable schema are deployed and verified;
+[the deployment receipt record](docs/deployments/sanctions-publication-mainnet.json)
+contains their addresses, transactions and pending owner-upgrade calldata.
 
 Each submitted reconciliation batch is a non-revocable EAS observation containing
 `string[]` account additions and removals. All networks, including EVM, use the
