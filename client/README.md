@@ -43,3 +43,16 @@ The oracle also publishes each source spelling when it differs from the canonica
 key. Direct RPC users can query either stored spelling. Other alternate forms need
 normalization through this package before calling the contract. Onchain callers can
 use `isSanctioned(address)`, `isSanctionedAccount`, or `isSanctionedKey` without npm.
+
+
+After the publication upgrade, `getAccountByKey` returns readable network,
+account and source UID strings. `latestPublication`, `pendingPublication` and
+`PublicationCompleted` expose update progress without changing membership queries.
+
+The package also exports `PUBLICATION_SCHEMA`, `encodePublication`,
+`decodePublication`, `publicationId`, `publicationSchemaUID`,
+`publicationRequest`, and `buildPublicationChunks`. These use ordinary EAS ABI
+arrays, including strings for every address family. The chunk builder defaults
+to 30 changes; publishers must simulate the resulting transaction and bound its
+gas before submission. `publicationRequest` builds a non-revocable EAS request;
+removals belong in later publication records, not EAS revocations.

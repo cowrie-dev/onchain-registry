@@ -39,3 +39,5 @@ export async function lookupSanctions(options: {
 }): Promise<SanctionsResult> {
     return (await lookupSanctionsBatch({ ...options, accounts: [{ network: options.network, account: options.account }] }))[0];
 }
+
+export * from './publications.js';

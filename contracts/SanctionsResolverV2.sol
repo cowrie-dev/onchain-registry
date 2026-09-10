@@ -21,10 +21,10 @@ contract SanctionsResolverV2 is SchemaResolver, OwnableUpgradeable, UUPSUpgradea
     bytes32 public schemaUID;
 
     struct Designation { bytes32 attestationUID; address attester; uint64 attestedAt; }
-    mapping(bytes32 => Designation) private _designations;
+    mapping(bytes32 => Designation) internal _designations;
     mapping(address => bool) public trustedAttesters;
-    EnumerableSet.Bytes32Set private _keys;
-    EnumerableSet.AddressSet private _evmAccounts;
+    EnumerableSet.Bytes32Set internal _keys;
+    EnumerableSet.AddressSet internal _evmAccounts;
 
     event AttesterTrusted(address indexed attester, bool trusted);
     event AccountSanctioned(bytes32 indexed key, bytes32 indexed network, string account, address attester, bytes32 uid);
@@ -78,11 +78,11 @@ contract SanctionsResolverV2 is SchemaResolver, OwnableUpgradeable, UUPSUpgradea
         }
         return keccak256(abi.encode(network, account));
     }
-    function _tryEvm(string memory account) private pure returns (bool, address) {
+    function _tryEvm(string memory account) internal pure returns (bool, address) {
         if (bytes(account).length != 42 || bytes(account)[0] != "0" || bytes(account)[1] != "x") return (false, address(0));
         return Strings.tryParseAddress(account);
     }
-    function _evmKey(address account) private pure returns (bytes32) {
+    function _evmKey(address account) internal pure returns (bytes32) {
         return keccak256(abi.encode(EVM, account));
     }
 
@@ -94,7 +94,7 @@ contract SanctionsResolverV2 is SchemaResolver, OwnableUpgradeable, UUPSUpgradea
         out = new bool[](accounts.length);
         for (uint256 i; i < accounts.length; ++i) out[i] = _designations[_evmKey(accounts[i])].attestationUID != bytes32(0);
     }
-    function getDesignation(address account) external view returns (Designation memory) { return _designations[_evmKey(account)]; }
+    function getDesignation(address account) public view virtual returns (Designation memory) { return _designations[_evmKey(account)]; }
     function isSanctionedAccount(bytes32 network, string calldata account) external view returns (bool) {
         return _designations[accountKey(network, account)].attestationUID != bytes32(0);
     }
@@ -103,7 +103,7 @@ contract SanctionsResolverV2 is SchemaResolver, OwnableUpgradeable, UUPSUpgradea
         out = new bool[](keys.length);
         for (uint256 i; i < keys.length; ++i) out[i] = _designations[keys[i]].attestationUID != bytes32(0);
     }
-    function getDesignationByKey(bytes32 key) external view returns (Designation memory) { return _designations[key]; }
+    function getDesignationByKey(bytes32 key) public view virtual returns (Designation memory) { return _designations[key]; }
     function sanctionedCount() external view returns (uint256) { return _evmAccounts.length(); }
     function sanctionedAddresses() external view returns (address[] memory) { return _evmAccounts.values(); }
     function sanctionedAccountCount() external view returns (uint256) { return _keys.length(); }
@@ -123,7 +123,7 @@ contract SanctionsResolverV2 is SchemaResolver, OwnableUpgradeable, UUPSUpgradea
         return limit < total - offset ? limit : total - offset;
     }
 
-    function onAttest(Attestation calldata att, uint256) internal override returns (bool) {
+    function onAttest(Attestation calldata att, uint256) internal virtual override returns (bool) {
         if (!trustedAttesters[att.attester] || att.schema != schemaUID || !att.revocable || att.expirationTime != 0) return false;
         (bytes32 network, string memory account) = abi.decode(att.data, (bytes32, string));
         bytes32 key = accountKey(network, account);
@@ -138,7 +138,7 @@ contract SanctionsResolverV2 is SchemaResolver, OwnableUpgradeable, UUPSUpgradea
         emit AccountSanctioned(key, network, account, att.attester, att.uid);
         return true;
     }
-    function onRevoke(Attestation calldata att, uint256) internal override returns (bool) {
+    function onRevoke(Attestation calldata att, uint256) internal virtual override returns (bool) {
         if (att.schema != schemaUID) return false;
         (bytes32 network, string memory account) = abi.decode(att.data, (bytes32, string));
         bytes32 key = accountKey(network, account);
