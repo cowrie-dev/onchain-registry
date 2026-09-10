@@ -97,10 +97,10 @@
         }
       ],
       "initialPopulation": {
-        "status": "in-progress",
+        "status": "complete",
         "sourceSha256": "0xa1b8f07ec5b08700e006c2aaf7fd942d78123deab7bb07360bb3ee3ec733d0d9",
         "expectedKeys": 1050,
-        "confirmedKeys": 180,
+        "confirmedKeys": 1050,
         "maxFeePerGasWei": "100000000",
         "confirmedBatches": [
           {
@@ -130,16 +130,291 @@
             "gasUsed": "12729816",
             "effectiveGasPriceWei": "87317259",
             "totalFeeWei": "1111532640694344"
+          },
+          {
+            "vaultRequestId": 560,
+            "transactionHash": "0xe76d56cc09939b131c390fb0cf27e53ec325d41afe729a3bd9dd8c566aba166d",
+            "blockNumber": 25949395,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "9209085",
+            "effectiveGasPriceWei": "73252435",
+            "totalFeeWei": "674587900371975"
+          },
+          {
+            "vaultRequestId": 559,
+            "transactionHash": "0xfbad3b6a17e26229012b409cc79fc8d96d183950e7e9f21f4d0f29fce5c55a09",
+            "blockNumber": 25949362,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "8470688",
+            "effectiveGasPriceWei": "73699479",
+            "totalFeeWei": "624285292371552"
+          },
+          {
+            "vaultRequestId": 561,
+            "transactionHash": "0x81371f90fc592d62d7983c0deae53dcf7a54f580e63b98ff1f75c0592f3937a2",
+            "blockNumber": 25949402,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "10358439",
+            "effectiveGasPriceWei": "78347986",
+            "totalFeeWei": "811562833753854"
+          },
+          {
+            "vaultRequestId": 562,
+            "transactionHash": "0x77d08468ed41da29e9ed11b207ed57ef3b795668a4bce614601aabd50cf4cfd2",
+            "blockNumber": 25949418,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "8719735",
+            "effectiveGasPriceWei": "79135786",
+            "totalFeeWei": "690043082936710"
+          },
+          {
+            "vaultRequestId": 563,
+            "transactionHash": "0x7c81e31ab635dbf6b031f6f0a8d1f706767e40bcfa469d32c26aee5c674d56cf",
+            "blockNumber": 25949425,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "9827320",
+            "effectiveGasPriceWei": "84468484",
+            "totalFeeWei": "830098822182880"
+          },
+          {
+            "vaultRequestId": 564,
+            "transactionHash": "0x6eb38a31449fa75c2214c6b03f9661002aa684fd7368ca256d184ff6c0b08d7b",
+            "blockNumber": 25949441,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "7893660",
+            "effectiveGasPriceWei": "74676872",
+            "totalFeeWei": "589473837431520"
+          },
+          {
+            "vaultRequestId": 565,
+            "transactionHash": "0x0e7f53e3c946024e82170bc3bbdb78f7b8efa09cde15fa20a016f791bd6f1a5b",
+            "blockNumber": 25949448,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "8380455",
+            "effectiveGasPriceWei": "72463300",
+            "totalFeeWei": "607275424801500"
+          },
+          {
+            "vaultRequestId": 566,
+            "transactionHash": "0xeaf463b4c26cf3aeae4f34d78e71ffc03caef8263d201a9c641e427075200eaa",
+            "blockNumber": 25949455,
+            "addedKeys": 60,
+            "removedKeys": 0,
+            "gasUsed": "13707681",
+            "effectiveGasPriceWei": "77843867",
+            "totalFeeWei": "1067058896642427"
+          },
+          {
+            "vaultRequestId": 567,
+            "transactionHash": "0x1f7007c8767e8485baf2957b45b1c2faa11838499fb7db69e4f8c664b8ccf4a2",
+            "blockNumber": 25949472,
+            "addedKeys": 60,
+            "removedKeys": 0,
+            "gasUsed": "12283375",
+            "effectiveGasPriceWei": "64697346",
+            "totalFeeWei": "794701762422750"
+          },
+          {
+            "vaultRequestId": 568,
+            "transactionHash": "0x36302671160e256e384ccfb2dcbd0a2ae8c9c62d179d2b6a15a936d77e188aa7",
+            "blockNumber": 25949478,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "6926132",
+            "effectiveGasPriceWei": "62448610",
+            "totalFeeWei": "432527316076520"
+          },
+          {
+            "vaultRequestId": 569,
+            "transactionHash": "0x110246e7afb758b9af42760fccea6bb05560f8fdd5bd71088c9538193b1f56b9",
+            "blockNumber": 25949489,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "7622922",
+            "effectiveGasPriceWei": "69457788",
+            "totalFeeWei": "529471300216536"
+          },
+          {
+            "vaultRequestId": 570,
+            "transactionHash": "0x59f1d2f6c1c57a5b85dce9a41a84ccc6c6784036292f4c53113ee66abf3a7af8",
+            "blockNumber": 25949495,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "8587936",
+            "effectiveGasPriceWei": "69263423",
+            "totalFeeWei": "594829843864928"
+          },
+          {
+            "vaultRequestId": 571,
+            "transactionHash": "0xff9d31c4c59aa3432027ef328d392a3de41e09cf9b70048cde1fa7dc82400857",
+            "blockNumber": 25949501,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "6221205",
+            "effectiveGasPriceWei": "70244832",
+            "totalFeeWei": "437007500062560"
+          },
+          {
+            "vaultRequestId": 572,
+            "transactionHash": "0x412475b765f70d380f99fbab1b974e3cea51d4fbb862615539fed49c2a3d81d5",
+            "blockNumber": 25949519,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "8333120",
+            "effectiveGasPriceWei": "68212984",
+            "totalFeeWei": "568426981230080"
+          },
+          {
+            "vaultRequestId": 573,
+            "transactionHash": "0x63c782bcdba2f31d19ed8cbef32bd5943c3b4754e554126ddad36a5293fbe71b",
+            "blockNumber": 25949528,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "8902570",
+            "effectiveGasPriceWei": "56479719",
+            "totalFeeWei": "502814651977830"
+          },
+          {
+            "vaultRequestId": 574,
+            "transactionHash": "0x85b10ae248c5a8687ab477e453a46a377b86aad3b58e422bb746cf40fe4d580c",
+            "blockNumber": 25949537,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "6224109",
+            "effectiveGasPriceWei": "68886111",
+            "totalFeeWei": "428754663450099"
+          },
+          {
+            "vaultRequestId": 575,
+            "transactionHash": "0x58e90a25e5f85ded543e3e816d57dfa7acada00fa64b499e07748b67f6f2f943",
+            "blockNumber": 25949546,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "11131081",
+            "effectiveGasPriceWei": "82368686",
+            "totalFeeWei": "916852515729566"
+          },
+          {
+            "vaultRequestId": 576,
+            "transactionHash": "0xd4eeb16b2b574d334bce180e669e0bda54215313d3f8ecf4e6a60befc824c2b7",
+            "blockNumber": 25949553,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "10396236",
+            "effectiveGasPriceWei": "91997917",
+            "totalFeeWei": "956432056640412"
+          },
+          {
+            "vaultRequestId": 577,
+            "transactionHash": "0x6242bfde420158b16333cfec5050b6e21c53114a8216b26a32a9369515838df3",
+            "blockNumber": 25949568,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "10875369",
+            "effectiveGasPriceWei": "74331532",
+            "totalFeeWei": "808382838835308"
+          },
+          {
+            "vaultRequestId": 578,
+            "transactionHash": "0x94e1876560348f9004e7fb08c202bc611daa41bc075b31b392201e8705db976a",
+            "blockNumber": 25949574,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "6224109",
+            "effectiveGasPriceWei": "71105839",
+            "totalFeeWei": "442570492472451"
+          },
+          {
+            "vaultRequestId": 579,
+            "transactionHash": "0xe8715a9d40abb0e03fc0520f5b4b331bb73693cb325a21313ce04129a2e031f0",
+            "blockNumber": 25949582,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "9429023",
+            "effectiveGasPriceWei": "68804461",
+            "totalFeeWei": "648758845271603"
+          },
+          {
+            "vaultRequestId": 580,
+            "transactionHash": "0x8a94d61d5d8d09e9b439ae960878ee90b73ce5f9234bd2ddcc82f70ab212626a",
+            "blockNumber": 25949589,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "7730219",
+            "effectiveGasPriceWei": "66886921",
+            "totalFeeWei": "517050547565699"
+          },
+          {
+            "vaultRequestId": 581,
+            "transactionHash": "0xff417f365b35f3fcd00994fe9277dfaae1526b95c2dc439947a93f65b34c571a",
+            "blockNumber": 25949597,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "9651291",
+            "effectiveGasPriceWei": "72098948",
+            "totalFeeWei": "695847927941868"
+          },
+          {
+            "vaultRequestId": 582,
+            "transactionHash": "0xcbf2beeee3a87d9a0799551543e9d1081d697e3fb226219b514fd8255ea23b80",
+            "blockNumber": 25949621,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "10936012",
+            "effectiveGasPriceWei": "63685693",
+            "totalFeeWei": "696467502876316"
+          },
+          {
+            "vaultRequestId": 583,
+            "transactionHash": "0xd15c41957575f126ea48ff77810eb33e9185d50303c953cca601b2a5b014f128",
+            "blockNumber": 25949680,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "10770970",
+            "effectiveGasPriceWei": "65287783",
+            "totalFeeWei": "703212752059510"
+          },
+          {
+            "vaultRequestId": 584,
+            "transactionHash": "0x55f43456e2b657ec6dcf878a25291ecb8ed91663f8b3fe61146acab8086fd1d9",
+            "blockNumber": 25949681,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "8109682",
+            "effectiveGasPriceWei": "64844007",
+            "totalFeeWei": "525864276375774"
+          },
+          {
+            "vaultRequestId": 585,
+            "transactionHash": "0x4847d1b448ece504ec0dd1f9931441584ca9f8c13bbb1b0b3a164e4fc92ed746",
+            "blockNumber": 25949683,
+            "addedKeys": 30,
+            "removedKeys": 0,
+            "gasUsed": "6478416",
+            "effectiveGasPriceWei": "71015654",
+            "totalFeeWei": "460068949124064"
           }
         ],
-        "confirmedAsOfBlock": 25949311,
-        "pendingBatch": {
-          "vaultRequestId": 559,
-          "addedKeys": 30,
-          "removedKeys": 0,
-          "maxFeesWei": "1035323400000000",
-          "apiCounterSignature": "completed"
-        }
+        "confirmedAsOfBlock": 25949683,
+        "completedAtBlock": 25949683,
+        "finalPublicationId": "0x10f34de3ff89a3fc4bb4e003e4982d311681fe3f35d618d3aa9ffe60148375b5",
+        "syncVerification": {
+          "checkedAt": "2026-09-10T21:35:56.148099+00:00",
+          "sourceSha256": "0xa1b8f07ec5b08700e006c2aaf7fd942d78123deab7bb07360bb3ee3ec733d0d9",
+          "sourcePublishedAt": "2026-09-10T00:00:00Z",
+          "expectedKeys": 1050,
+          "missingKeys": 0,
+          "unexpectedKeys": 0,
+          "method": "Fresh manifest-verified Treasury source vs onchain enumeration; production publisher --check-sync exit 0"
+        },
+        "totalPopulationFeeWei": "20668387514313730"
       }
     }
   },

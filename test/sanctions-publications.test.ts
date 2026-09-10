@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { network } from 'hardhat';
-import { encodeAbiParameters, encodeFunctionData, getAddress, keccak256, stringToHex, zeroAddress, zeroHash, type Hex } from 'viem';
+import { encodeAbiParameters, encodeFunctionData, getAddress, keccak256, stringToHex, testActions, toHex, zeroAddress, zeroHash, type Hex } from 'viem';
 import { encodeDesignation } from '../scripts/utils/eas.js';
 import { deployEAS } from './helpers/eas.js';
 import { buildPublicationChunks, decodePublication, encodePublication, publicationId, publicationRequest, publicationSchemaUID, PUBLICATION_SCHEMA, type PublicationHeader } from '../client/src/publications.js';
@@ -82,6 +82,50 @@ describe('Publication schema and UUPS upgrade', () => {
         assert.deepEqual(await resolver.read.getPublicationChunk([d.attestationUID]),p);
         assert.equal(await resolver.read.isSanctionedAccount([stringToHex('EVM',{size:32}),'0xmalformed']),true);
         assert.equal(await resolver.read.isSanctioned([zeroAddress]),false);
+    });
+    it('preflights ordered batches with a head override and keeps padded gas sufficient after predecessor writes', async () => {
+        // Exercise empty bootstrap, swap-and-pop removals, emptying both sets, and adding again.
+        for (const initiallyPopulated of [false, true]) {
+            const {owner, stranger, client, eas, schema, resolver, submit} = await setup();
+            const oldRows = [row(owner.account.address,'EVM'), row(), row('old-sol','SOL')];
+            if (initiallyPopulated) await submit(buildPublicationChunks(header(),oldRows,[])[0]);
+            const originalHead = await resolver.read.latestPublication();
+            const testClient = client.extend(testActions({mode:'hardhat'}));
+            const slot = toHex(8n,{size:32});
+            assert.equal(await client.getStorageAt({address:resolver.address,slot}),originalHead);
+            const newRows = [row(stranger.account.address,'EVM'), row('new-btc','BTC'), row('new-sol','SOL')];
+            const chunks = buildPublicationChunks(header({previousPublication:originalHead,kind:initiallyPopulated?2:0}),newRows,initiallyPopulated?oldRows:[],1);
+            let previousPublication: Hex = originalHead;
+            const plans = [];
+            for (const [index,chunk] of chunks.entries()) {
+                const p = {...chunk, previousPublication, kind:index===0?chunk.kind:2, chunkIndex:0, chunkCount:1};
+                const data = encodeFunctionData({abi:eas.abi,functionName:'multiAttest',args:[[{schema,data:[publicationRequest(p)]}]]});
+                // EDR does not accept estimateGas state overrides. Apply the same slot edit
+                // locally, estimate without a transaction, then restore the original head.
+                await testClient.setStorageAt({address:resolver.address,index:slot,value:previousPublication});
+                const estimate = await client.estimateGas({account:owner.account.address,to:eas.address,data});
+                await testClient.setStorageAt({address:resolver.address,index:slot,value:originalHead});
+                plans.push({p,data,gas:estimate*120n/100n});
+                previousPublication = publicationId(p);
+            }
+            // Future calldata is rejected against the real head until its predecessor executes.
+            await assert.rejects(client.call({account:owner.account.address,to:eas.address,data:plans[1].data}));
+            const keys = new Set(initiallyPopulated?oldRows.map(r=>sanctionsAccountKey(r.network as 'EVM'|'BTC'|'SOL',r.account)):[]);
+            for (const {p,data,gas} of plans) {
+                const tx = await owner.sendTransaction({to:eas.address,data,gas});
+                const receipt = await client.waitForTransactionReceipt({hash:tx});
+                assert.equal(receipt.status,'success');
+                assert.ok(receipt.gasUsed <= gas);
+                p.removedAccounts.forEach((account,index)=>keys.delete(sanctionsAccountKey(p.removedNetworks[index] as 'EVM'|'BTC'|'SOL',account)));
+                p.addedAccounts.forEach((account,index)=>keys.add(sanctionsAccountKey(p.entityNetworks[p.entityIndices[index]] as 'EVM'|'BTC'|'SOL',account)));
+                assert.deepEqual(new Set(await resolver.read.sanctionedKeyRange([0n,100n])),keys);
+                assert.equal(await resolver.read.latestPublication(),publicationId(p));
+                assert.equal(await resolver.read.pendingPublication(),zeroHash);
+            }
+            assert.equal(await resolver.read.sanctionedAccountCount(),3n);
+            assert.equal(await resolver.read.sanctionedCount(),1n);
+            assert.equal(await resolver.read.isSanctioned([stranger.account.address]),true);
+        }
     });
     it('removes explicitly under a successor attester and leaves historical EAS records intact',async()=>{
         const {owner,stranger,eas,resolver,schema,submit}=await setup();
