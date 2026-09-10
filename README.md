@@ -52,7 +52,7 @@ empty V2 proxy in place. It retains the Chainalysis query ABI and adds readable
 publication records. The currently confirmed deployment record still describes
 the original implementation; publication support is not yet activated on mainnet.
 
-Each changed source publication is a non-revocable EAS observation containing
+Each submitted reconciliation batch is a non-revocable EAS observation containing
 `string[]` account additions and removals. All networks, including EVM, use the
 same readable encoding. A shared entity table avoids repeating source IDs,
 categories, network names and designation dates for each account. The schema is
@@ -65,19 +65,22 @@ remain intact. Removing attester trust prevents future writes without erasing
 prior entries. `getAccountByKey` returns the active account and network as strings.
 `getPublicationChunk` returns the decoded arrays from EAS.
 
-`latestPublication` identifies the last completed publication. `pendingPublication`
-identifies a partially applied one. Large loads apply incrementally across chunks;
-ordinary updates generally fit in one attestation and one transaction. Several
-chunks or publications may share one `multiAttest`. Only completion emits
-`PublicationCompleted`; its key counts include canonical and source spellings.
-Bootstrap records (kind 0) and corrections (kind 2) can be excluded when counting
-observed Treasury changes (kind 1).
+`latestPublication` identifies the last completed onchain batch. The publisher
+closes all chunks of a batch in one atomic `multiAttest` transaction, leaving
+`pendingPublication` empty. Large differences require several independent batches;
+only `--check-sync` establishes that the mined set matches the latest Treasury list.
+`PublicationCompleted` counts submitted batches, not Treasury releases. The first
+batch uses kind 0 and later reconciliations use kind 2. Kind 1 remains a supported
+schema value but is not emitted by the publisher.
 
-Unchanged publications are archived offchain and require no transaction or
-hardware approval. The publisher retains original Treasury bytes, parsed
-snapshots and prepared plans in public storage so it can resume interrupted work.
-It cannot reconstruct publications it never downloaded. Paginate enumeration at
-one fixed block because removal changes element order.
+Each run compares the latest verified Treasury list with the current onchain set.
+Matching sets need no transaction or approval. No source archive, public bucket,
+or saved transaction plan is required. After a restart, read current membership
+and recover removed accounts through `getAccountByKey`; compute the difference
+again. `comparisonSourceSha256` is zero because the baseline is chain state.
+`sourceUrl` points to Treasury's current feed and the digest identifies the bytes
+used; historical source availability and intermediate Treasury changes are not
+promised. Paginate enumeration at one fixed block because removal changes order.
 
 ## Proxy and ownership
 
@@ -135,16 +138,18 @@ Only V1 and the existing V2 proxy need adding to the Vault whitelist, in one
 amendment retaining EAS and ENS. Implementation deployment and schema registration
 use the deployment EOA; no new whitelist destination is needed for them.
 
-The publisher in cowrie-dev/scraper owns archive setup, source reconciliation,
+The publisher in cowrie-dev/scraper owns source reconciliation,
 hardware proposals and bootstrap recovery; its `docs/sanctions-resolver-v2.md`
 is the cutover runbook. The old `registry:sanction` and `registry:unsanction`
 commands apply only to the original per-key schema and refuse an activated
 publication resolver. Use the publication publisher for additions and removals.
 
 Measured against the September 8 source (998 lookup keys), the readable publication
-bootstrap used 265,481,864 gas in 34 EAS chunks grouped into 29 transactions with
+benchmark of a multi-transaction publication used 265,481,864 gas in 34 EAS chunks grouped into 29 transactions with
 20% gas headroom. That is about 63% less than the previous 725,605,331-gas estimate.
-Dollar cost depends on gas price and ETH price. Later small changes generally
+The current publisher completes a separate publication per transaction, so that
+benchmark is not an exact estimate for its bootstrap. Dollar cost depends on gas
+price and ETH price. Later small changes generally
 require one transaction; the initial load is the exceptional large operation.
 
 The [public communication draft](docs/ofacts.md) explains the motivation for EAS.

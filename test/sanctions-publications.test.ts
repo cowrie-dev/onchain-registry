@@ -146,6 +146,28 @@ describe('Publication schema and UUPS upgrade', () => {
         assert.equal(await resolver.read.latestPublication(),publicationId(next));
         assert.equal(await resolver.read.sanctionedAccountCount(),0n);
     });
+    it('closes each reconciliation transaction and accepts a fresh diff with the same Treasury digest',async()=>{
+        const {eas,schema,resolver}=await setup();
+        const additions=[row(),row('retained-source-literal','SOL'),row('later-account','DOGE')];
+        const all=buildPublicationChunks(header(),additions,[],1);
+        const first=all.slice(0,2).map((p,chunkIndex)=>({...p,chunkIndex,chunkCount:2}));
+        await eas.write.multiAttest([[{schema,data:first.map(publicationRequest)}]]);
+        assert.equal(await resolver.read.pendingPublication(),zeroHash);
+        const previous=await resolver.read.latestPublication();
+        assert.equal(previous,publicationId(first[0]));
+        const live=await resolver.read.sanctionedKeyRange([0n,250n]);
+        const missing=additions.filter(r=>!live.includes(sanctionsAccountKey(r.network as 'BTC'|'SOL'|'DOGE',r.account)));
+        const next=buildPublicationChunks(header({kind:2,previousPublication:previous}),missing,[]);
+        await eas.write.multiAttest([[{schema,data:next.map(publicationRequest)}]]);
+        assert.equal(await resolver.read.pendingPublication(),zeroHash);
+        assert.equal(await resolver.read.sanctionedAccountCount(),3n);
+        assert.equal(await resolver.read.latestPublication(),publicationId(next[0]));
+        const [network,account]=await resolver.read.getAccountByKey([sanctionsAccountKey('SOL','retained-source-literal')]);
+        const removal=buildPublicationChunks(header({kind:2,previousPublication:publicationId(next[0]),sourceSha256:hash('latest source'),sourcePublishedAt:101n}),[],[{network,account}]);
+        await eas.write.multiAttest([[{schema,data:removal.map(publicationRequest)}]]);
+        assert.equal(await resolver.read.isSanctionedKey([sanctionsAccountKey('SOL',account)]),false);
+        assert.equal(await resolver.read.pendingPublication(),zeroHash);
+    });
     it('creates no attestations for unchanged membership',()=>{
         assert.deepEqual(buildPublicationChunks(header(),[],[]),[]);
     });

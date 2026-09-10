@@ -6,13 +6,14 @@ owner-only and refuses a nonempty registry; this deployment has never been popul
 Ownership and attester trust survive activation. Ordinary Ownable transfer and trust
 rotation permit another operator, including Treasury, to take over the same proxy.
 
-Only publications that change crypto membership require transactions. EAS records
-are non-revocable historical observations. Removal is an explicit change; a later
-correction never erases earlier evidence. Kind 0 is bootstrap, 1 publication, and
-2 correction. Bootstrap and corrections are excluded from publication-change counts.
-Each record includes the comparison source digest. Counts cover observed
-publication differences; a release never downloaded cannot be reconstructed
-from its successor. Kind 2 is available for explicit operator corrections.
+The publisher compares the latest verified Treasury list with current onchain
+membership. It submits only that difference and keeps no source archive or saved
+plan. EAS records are non-revocable observations of updates actually submitted.
+Removal is explicit and never erases earlier evidence. Kind 0 is the first
+bootstrap batch; kind 2 is each subsequent reconciliation. Kind 1 remains supported
+by the schema but is not used by this publisher. Counts describe onchain batches,
+not a complete history or count of Treasury editions. `comparisonSourceSha256` is
+zero because comparison uses live chain state, not an older source file.
 
 All accounts, including Ethereum accounts and malformed literals, are ordinary
 strings in parallel ABI arrays. No packed address codec is needed. Entity metadata
@@ -25,16 +26,18 @@ The original isSanctioned(address) selector and 32-byte boolean result do not ch
 Each logical publication has a deterministic ID derived from its header, including
 the preceding completed publication and the number of chunks. Chunks are ordered;
 only the final chunk advances the completed-publication pointer and emits the
-publication-completed event. State changes become visible after each chunk, so a
-partially applied publication is explicitly observable. There is no claim of atomic
-activation across multiple transactions. The sender of each chunk is retained by EAS.
-Replays, wrong predecessors, header changes and out-of-order chunks are rejected.
+completion event. The publisher closes every selected chunk in a single atomic
+multiAttest transaction. It never leaves a pending publication between transactions.
+Large differences are several independent batches, each freshly computed from the
+then-current Treasury list and mined set. An externally submitted partial
+publication remains observable through `pendingPublication` and requires its
+operator to finish it. Replays and out-of-order chunks are rejected.
 
-One ordinary publication generally needs one EAS attestation and one transaction.
-Several publication attestations may share a multiAttest transaction. Large bootstrap
-loads use measured bounded chunks. No unchanged-publication transactions or approvals
-are created. The publisher retains original source bytes and prepared proposals and
-must resume pending work rather than replacing it on each poll.
+One invocation proposes at most one transaction. Matching membership produces no
+transaction. Existing Vault approvals remain pending until terminal; after a
+confirmation, the publisher computes a new difference. It can restart without any
+publisher-maintained storage. The chain's active EAS record supplies the original
+account/network strings when a key is absent from the current Treasury list.
 
 The resolver stores one UID per key, with attester/time stored once per chunk.
 Existing enumeration remains. Per-key getters reconstruct the historical Designation
@@ -52,8 +55,9 @@ The original `SCHEMA` constant remains for historical compatibility; the active
 
 The publication ID identifies an ordered header, not a cryptographic commitment
 to each change array. Authorized attesters supply the contents; the public source
-digest supports independent verification. Immutable prepared plans preserve the
-publisher's exact chunks across retries and operator approvals.
+digest identifies the input used by the publisher. The source URL points to
+Treasury's current feed; historical XML availability is not promised. Vault retains
+submitted calldata while it awaits approval; the publisher retains no plan.
 
 ## Readable schema
 
