@@ -100,7 +100,7 @@
         "status": "in-progress",
         "sourceSha256": "0xa1b8f07ec5b08700e006c2aaf7fd942d78123deab7bb07360bb3ee3ec733d0d9",
         "expectedKeys": 1050,
-        "confirmedKeys": 120,
+        "confirmedKeys": 180,
         "maxFeePerGasWei": "100000000",
         "confirmedBatches": [
           {
@@ -120,12 +120,24 @@
             "gasUsed": "12617484",
             "effectiveGasPriceWei": "68772263",
             "totalFeeWei": "867732928046292"
+          },
+          {
+            "vaultRequestId": 558,
+            "transactionHash": "0x006eae08c22c40126fde3b71c52872fa153672b64d895cd3580a2f0e99699287",
+            "blockNumber": 25949311,
+            "addedKeys": 60,
+            "removedKeys": 0,
+            "gasUsed": "12729816",
+            "effectiveGasPriceWei": "87317259",
+            "totalFeeWei": "1111532640694344"
           }
         ],
+        "confirmedAsOfBlock": 25949311,
         "pendingBatch": {
-          "vaultRequestId": 558,
-          "addedKeys": 60,
-          "maxFeesWei": "1554531300000000",
+          "vaultRequestId": 559,
+          "addedKeys": 30,
+          "removedKeys": 0,
+          "maxFeesWei": "1035323400000000",
           "apiCounterSignature": "completed"
         }
       }
