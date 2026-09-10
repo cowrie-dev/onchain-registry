@@ -71,8 +71,9 @@ prior entries. `getAccountByKey` returns the active account and network as strin
 
 `latestPublication` identifies the last completed onchain batch. The publisher
 closes all chunks of a batch in one atomic `multiAttest` transaction, leaving
-`pendingPublication` empty. Large differences require several independent batches;
-only `--check-sync` establishes that the mined set matches the latest Treasury list.
+`pendingPublication` empty. The nightly publisher queues every required batch in
+one run, linking each to its predecessor and numbering the approval order. Vault
+shows newest first, so approve bottom to top. Only `--check-sync` establishes that the mined set matches the latest Treasury list.
 `PublicationCompleted` counts submitted batches, not Treasury releases. The first
 batch uses kind 0 and later reconciliations use kind 2. Kind 1 remains a supported
 schema value but is not emitted by the publisher.
@@ -157,4 +158,9 @@ price and ETH price. Later small changes generally
 require one transaction; the initial load is the exceptional large operation.
 
 The [public communication draft](docs/ofacts.md) explains the motivation for EAS.
-The client package is prepared for npm publication after activation and population.
+Mainnet activation and population completed on September 10, 2026. All 1,050
+Treasury lookup keys are loaded as of block 25949683; the production publisher's
+fresh-source `--check-sync` returned zero missing or unexpected keys. Deployment,
+upgrade and all 30 population transactions cost 0.020934557215937406 ETH in total.
+`deployments.json` records every receipt and the completed synchronization check.
+The client package is prepared for npm publication.
