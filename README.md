@@ -47,15 +47,14 @@ returning listed / not-listed / invalid-input and preserving source evidence.
 
 ## Publication records and state
 
-The next implementation, `SanctionsPublicationResolver`, upgrades the existing
-empty V2 proxy in place. It retains the Chainalysis query ABI and adds readable
-publication records. The active deployment record still describes
-the original proxy implementation; publication support is not yet activated on mainnet.
-The candidate implementation and non-revocable schema are deployed and verified;
-`deployments.json["1"].SanctionsResolverV2.pendingUpgrade` in the
-[deployment manifest](deployments.json) records their addresses, confirmed
-transactions and owner-upgrade calldata. The active `implementation` and
-`schemaUID` fields change only after the owner upgrade confirms.
+`SanctionsPublicationResolver` is active on the mainnet V2 proxy. It retains
+its Chainalysis query ABI and adds readable publication records. Owner upgrade
+request 555 confirmed at block 25949093. The implementation, registered schema,
+owner and trusted attester were verified against the mined state.
+`deployments.json["1"].SanctionsResolverV2` in the
+[deployment manifest](deployments.json) records the active implementation and
+schema; its `upgrades` array preserves the previous deployment and upgrade receipt.
+Population and production cutover remain pending.
 
 Each submitted reconciliation batch is a non-revocable EAS observation containing
 `string[]` account additions and removals. All networks, including EVM, use the
