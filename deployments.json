@@ -95,7 +95,31 @@
           "previousSchemaUID": "0x5df8c5aff4ab385ec737bd2203688c1c073459d936db9abfe253ef149ec9f0bb",
           "previousSchemaRegistrationTxHash": "0x5a7f591e5a7c11dbca763bc55cfc80bcd8a8ce78710ff1c42d4306e814bbf8b1"
         }
-      ]
+      ],
+      "initialPopulation": {
+        "status": "in-progress",
+        "sourceSha256": "0xa1b8f07ec5b08700e006c2aaf7fd942d78123deab7bb07360bb3ee3ec733d0d9",
+        "expectedKeys": 1050,
+        "confirmedKeys": 60,
+        "maxFeePerGasWei": "100000000",
+        "confirmedBatches": [
+          {
+            "vaultRequestId": 556,
+            "transactionHash": "0x5b4a6c59d239bc29672f4b86b791fefe99b7509923966d7e2367087afcb6d4e1",
+            "blockNumber": 25949170,
+            "addedKeys": 60,
+            "gasUsed": "13210866",
+            "effectiveGasPriceWei": "85890897",
+            "totalFeeWei": "1134693130886802"
+          }
+        ],
+        "pendingBatch": {
+          "vaultRequestId": 557,
+          "addedKeys": 60,
+          "maxFeesWei": "1540837500000000",
+          "apiCounterSignature": "completed"
+        }
+      }
     }
   },
   "360": {
