@@ -40,7 +40,7 @@
       "createxAddress": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
       "deployedAt": "2026-09-09T07:02:23.000Z",
       "pendingUpgrade": {
-        "status": "deployed-and-registered-awaiting-owner-upgrade",
+        "status": "awaiting-owner-upgrade-approval",
         "sourceCommit": "f3d57dca17743d36b22cc4266b141566b5fb9e79",
         "implementation": "0x67b81B68e78e2f801f06E78c0b127db8E86F1b5E",
         "implementationCreationTxHash": "0xc736315240d1f2210816d4eaee693ab9ae443939ffe954752c4813dc0e875d1c",
@@ -55,7 +55,19 @@
         "totalFeesWei": "260892184274100",
         "ownerUpgrade": {
           "to": "0x0facD8549aB0666c3c79597f75cd8c75A5520Fac",
-          "data": "0x4f1ef28600000000000000000000000067b81b68e78e2f801f06e78c0b127db8e86f1b5e000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000042f05a2dd00000000000000000000000000000000000000000000000000000000"
+          "data": "0x4f1ef28600000000000000000000000067b81b68e78e2f801f06e78c0b127db8e86f1b5e000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000042f05a2dd00000000000000000000000000000000000000000000000000000000",
+          "vault": {
+            "accountId": 19,
+            "accountName": "OFACAttester-ETH",
+            "requestId": 555,
+            "requestStatus": "PENDING_APPROVAL",
+            "apiCounterSignature": "completed",
+            "apiApprovedAt": "2026-09-10T19:29:50.792Z",
+            "gasLimit": "93870",
+            "maxFeePerGasWei": "200000000",
+            "priorityFeePerGasWei": "10000000",
+            "maxFeesWei": "18774000000000"
+          }
         },
         "sourceVerification": {
           "service": "Sourcify",
