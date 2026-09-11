@@ -1,4 +1,4 @@
-/** SanctionsResolverV2 account encoding. Keep in sync with onchain-registry/client/src/accounts.ts. */
+/** Account normalization and key encoding for the V2 proxy. */
 import { getCoderByCoinName } from '@ensdomains/address-encoder';
 import { bytesToHex, encodeAbiParameters, getAddress, hexToBytes, keccak256, stringToHex, type Hex } from 'viem';
 

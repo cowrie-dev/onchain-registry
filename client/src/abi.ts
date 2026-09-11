@@ -19,6 +19,8 @@ export const sanctionsResolverV2Abi = parseAbi([
     'function getPublicationChunk(bytes32 uid) view returns (Publication)',
     'event PublicationChunkApplied(bytes32 indexed publicationId,bytes32 indexed uid,uint32 chunkIndex)',
     'function getAccountByKey(bytes32 key) view returns (string network,string account,string sourceUID)',
+    'function publicationsEnabled() view returns (bool)',
+    'function PUBLICATION_SCHEMA() view returns (string)',
     'function latestPublication() view returns (bytes32)',
     'function pendingPublication() view returns (bytes32)',
     'function publications(bytes32 id) view returns (bytes32 firstUID,bytes32 lastUID,bytes32 sourceSha256,uint64 sourcePublishedAt,uint32 processedChunks,uint32 chunkCount,uint8 kind,uint32 addedKeys,uint32 removedKeys)',

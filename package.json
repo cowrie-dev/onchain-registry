@@ -28,7 +28,8 @@
     "registry:check": "op run --env-file=.env.ref -- hardhat run scripts/actions/check.ts --network ${NETWORK:-sepolia}",
     "registry:list-sanctioned": "op run --env-file=.env.ref -- hardhat run scripts/actions/list-sanctioned.ts --network ${NETWORK:-sepolia}",
     "registry:transfer-owner": "op run --env-file=.env.ref -- hardhat run scripts/actions/transfer-ownership.ts --network ${NETWORK:-sepolia}",
-    "client:build": "tsc -p client/tsconfig.json"
+    "client:build": "tsc -p client/tsconfig.json",
+    "client:check": "node scripts/check-client-package.mjs"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.3",

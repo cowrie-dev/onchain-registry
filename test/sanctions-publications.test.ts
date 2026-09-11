@@ -7,6 +7,7 @@ import { encodeDesignation } from '../scripts/utils/eas.js';
 import { deployEAS } from './helpers/eas.js';
 import { buildPublicationChunks, decodePublication, encodePublication, publicationId, publicationRequest, publicationSchemaUID, PUBLICATION_SCHEMA, type PublicationHeader } from '../client/src/publications.js';
 import { sanctionsAccountKey } from '../client/src/accounts.js';
+import { lookupSanctionsBatch, sanctionsResolverV2Abi } from '../client/src/index.js';
 
 let viem: Awaited<ReturnType<typeof network.connect>>['viem'];
 before(async () => { viem = (await network.connect()).viem; });
@@ -38,6 +39,50 @@ async function setup() {
 }
 
 describe('Publication schema and UUPS upgrade', () => {
+    it('matches every SDK ABI entry to the current publication contract', async () => {
+        const { resolver } = await setup();
+        const parameter = (p: any): any => ({ type: p.type,
+            ...(p.components ? { components: p.components.map((c: any) => ({ name: c.name, ...parameter(c) })) } : {}),
+            ...(p.indexed ? { indexed: true } : {}),
+        });
+        for (const entry of sanctionsResolverV2Abi) {
+            const actual = resolver.abi.find(item => item.type === entry.type && 'name' in item && item.name === entry.name);
+            assert.ok(actual && 'inputs' in actual, `Missing ABI entry: ${entry.name}`);
+            assert.deepEqual(entry.inputs.map(parameter), actual.inputs.map(parameter), entry.name);
+            if (entry.type === 'function' && actual.type === 'function') {
+                assert.equal(entry.stateMutability, actual.stateMutability, entry.name);
+                assert.deepEqual(entry.outputs.map(parameter), actual.outputs.map(parameter), entry.name);
+            }
+        }
+    });
+    it('screens the upgraded proxy and preserves an explicitly pinned historical snapshot', async () => {
+        const { client, resolver, submit } = await setup();
+        const accounts = [
+            { network: 'BTC' as const, account: btc },
+            { network: 'EVM' as const, account: '0xmalformed' },
+            { network: 'EVM' as const, account: zeroAddress },
+        ];
+        const p = buildPublicationChunks(header(), [row(), row('0xmalformed', 'EVM')], [])[0];
+        const receipt = await submit(p);
+        const read = (blockNumber: bigint) => lookupSanctionsBatch({ client, resolver: resolver.address, accounts, blockNumber });
+        const before = await read(receipt.blockNumber);
+        assert.deepEqual(before.map(result => result.status), ['listed', 'listed', 'not-listed']);
+        assert.equal(before[1].sourceLiteral, true);
+        const designation = await resolver.read.getDesignationByKey([sanctionsAccountKey('BTC', btc)]);
+        assert.deepEqual(before[0].matches, [{ key: sanctionsAccountKey('BTC', btc), ...designation }]);
+        const removal = buildPublicationChunks(header({ kind: 2, previousPublication: publicationId(p) }), [], [row()])[0];
+        const removed = await submit(removal);
+        assert.equal((await read(removed.blockNumber))[0].status, 'not-listed');
+        assert.deepEqual(await read(receipt.blockNumber), before);
+        const count = await client.readContract({ address: resolver.address, abi: sanctionsResolverV2Abi,
+            functionName: 'sanctionedAccountCount', blockNumber: receipt.blockNumber });
+        const keys = await client.readContract({ address: resolver.address, abi: sanctionsResolverV2Abi,
+            functionName: 'sanctionedKeyRange', args: [0n, count], blockNumber: receipt.blockNumber });
+        assert.equal(BigInt(keys.length), count);
+        const account = await client.readContract({ address: resolver.address, abi: sanctionsResolverV2Abi,
+            functionName: 'getAccountByKey', args: [sanctionsAccountKey('BTC', btc)], blockNumber: receipt.blockNumber });
+        assert.deepEqual(account, ['BTC', btc, '123']);
+    });
     it('preserves ownership and trust, rejects repeated activation and implementation initialization',async()=>{
         const {owner,resolver,implementation,schema}=await setup();
         assert.equal(getAddress(await resolver.read.owner()),getAddress(owner.account.address));
