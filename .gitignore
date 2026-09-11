@@ -27,3 +27,8 @@
 
 # CREATE3 deploy calldata written by scripts/deploy-create3.ts in PRINT_CALLDATA mode
 /calldata
+
+# SDK build and package output
+/client/dist/
+/client/node_modules/
+/client/*.tgz

@@ -1,15 +1,34 @@
 # Cowrie sanctions client
 
-TypeScript client for SanctionsResolverV2. The package is prepared for npm publication
-at the V2 launch; it is not published yet. Supply the verified V2 proxy address. Implementation upgrades keep that address
-and the query ABI stable.
+TypeScript client for the Cowrie sanctions oracle's V2 proxy, including the
+`SanctionsPublicationResolver` upgrade activated on Ethereum mainnet on September
+10, 2026. Version `0.1.0` is prepared for its first npm publication.
+
+The mainnet proxy is `0x0facD8549aB0666c3c79597f75cd8c75A5520Fac` (chain ID 1).
+Use the proxy for state reads. Its current implementation is recorded in the
+repository's `deployments.json`; upgrades keep the proxy address stable.
+
+## Installation and lookup
+
+After publication:
+
+```sh
+npm install @cowrie/sanctions-client viem
+```
+
+The package is ESM and requires viem 2.37.12 or later in the 2.x series.
 
 ```ts
+import { createPublicClient, http } from 'viem';
+import { mainnet } from 'viem/chains';
 import { lookupSanctions } from '@cowrie/sanctions-client';
 
+const client = createPublicClient({ chain: mainnet, transport: http('https://YOUR_ETHEREUM_RPC') });
+const resolver = '0x0facD8549aB0666c3c79597f75cd8c75A5520Fac';
+
 const result = await lookupSanctions({
-  client, // your viem PublicClient on the oracle's deployment chain
-  resolver, // the verified SanctionsResolverV2 address
+  client,
+  resolver,
   network: 'BTC',
   account: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
 });
@@ -44,8 +63,9 @@ key. Direct RPC users can query either stored spelling. Other alternate forms ne
 normalization through this package before calling the contract. Onchain callers can
 use `isSanctioned(address)`, `isSanctionedAccount`, or `isSanctionedKey` without npm.
 
+## Publication records
 
-After the publication upgrade, `getAccountByKey` returns readable network,
+In the current implementation, `getAccountByKey` returns readable network,
 account and source UID strings. `latestPublication`, `pendingPublication` and
 `PublicationCompleted` expose update progress without changing membership queries.
 
@@ -56,3 +76,80 @@ arrays, including strings for every address family. The chunk builder defaults
 to 30 changes; publishers must simulate the resulting transaction and bound its
 gas before submission. `publicationRequest` builds a non-revocable EAS request;
 removals belong in later publication records, not EAS revocations.
+
+For the current publisher lifecycle, submit all chunks of one publication in a
+single EAS `multiAttest` transaction. `buildPublicationChunks` partitions changes;
+it does not submit transactions or decide which chunks fit the gas limit. If a
+complete publication does not fit, build smaller complete publications, each
+linked to the previous publication ID. Kind `0` bootstraps an empty registry;
+subsequent reconciliations use kind `2`. Kind `1` remains supported for explicit
+source publications. An unchanged set produces no chunks and needs no transaction.
+
+## Enumerating current accounts
+
+`sanctionsResolverV2Abi` includes the current publication reads as well as the
+original V2 membership methods. The counts describe different sets:
+
+- `sanctionedAddresses()` returns every valid EVM address and its length matches
+  `sanctionedCount()`.
+- `sanctionedKeyRange(offset, limit)` returns account keys across all supported
+  networks and its complete length matches `sanctionedAccountCount()`.
+- `getAccountByKey(key)` returns `[network, account, sourceUID]` for an active key.
+  `sourceUID` is the Treasury entity ID. Canonical and source spellings can have
+  separate keys, so this is a list of lookup records, not distinct wallets or people.
+
+Read every page and its details at one block because removals reorder the set:
+
+```ts
+import { sanctionsResolverV2Abi } from '@cowrie/sanctions-client';
+
+const blockNumber = await client.getBlockNumber();
+const contract = { address: resolver, abi: sanctionsResolverV2Abi, blockNumber } as const;
+const count = await client.readContract({ ...contract, functionName: 'sanctionedAccountCount' });
+const accounts = [];
+for (let offset = 0n; offset < count; offset += 100n) {
+  const keys = await client.readContract({
+    ...contract, functionName: 'sanctionedKeyRange', args: [offset, 100n],
+  });
+  for (const key of keys) {
+    const [network, account, sourceUID] = await client.readContract({
+      ...contract, functionName: 'getAccountByKey', args: [key],
+    });
+    accounts.push({ key, network, account, sourceUID });
+  }
+}
+```
+
+The sequential example bounds RPC concurrency. Larger consumers can batch those
+reads through their provider or Multicall while preserving `blockNumber` and
+propagating read failures.
+
+## Preparing a release
+
+From the repository root:
+
+```sh
+npm ci
+npm test
+npm run client:check
+```
+
+`client:check` packs the SDK, installs that tarball in a temporary consumer, checks
+TypeScript imports, and exercises its runtime exports. It requires npm registry
+access on a cold cache. The package contains compiled JavaScript, declarations,
+this README and the MIT license.
+
+After the release commit has merged, an authorized maintainer with publish access
+to the `@cowrie` npm scope can publish from `client/`:
+
+```sh
+cd client
+npm publish --dry-run
+npm publish --access public
+npm view @cowrie/sanctions-client version
+```
+
+Review the version and tarball contents before the real publish. The dry run does
+not prove that the npm account has publishing permission or satisfies its 2FA
+requirements. This SDK needs only an RPC connection for reads, with no wallet or
+signing key.
